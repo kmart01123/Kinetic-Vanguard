@@ -19,10 +19,7 @@ Version 14.1.0 restores maintained damage and control benchmark harness source. 
 <!-- BEGIN GENERATED BALANCE MATRICES -->
 ## Balance benchmark snapshot
 
-**Retained development snapshot** — canonical rules **v14.4.0**; current published release **v14.3.0**.
-
-The v15.0.0 development line retires Gravitic Press and tests Pyrokinesis Maturation. This retained snapshot was evaluated on v14.4.0 and does not include the new Apex packet; fresh candidate evidence is pending.
-
+**Unreleased development snapshot** — canonical rules **v15.0.0**; current published release **v14.3.0**.
 
 Target profile: `headline`. The maintained headline benchmark uses 47 creature profiles from SRD 5.2.1 at levels 7, 11, 15, and 20. These are exact analytical full-roster results, with creatures weighted equally within their level.
 
@@ -39,7 +36,7 @@ The front-door damage view is the single-target benchmark: primary-target DPR at
 | 7 | COLD (-6.99%) | IDEAL | COLD (-2.61%) | IDEAL |
 | 11 | COLD (-19.14%) | IDEAL | COLD (-0.20%) | IDEAL |
 | 15 | COLD (-15.14%) | IDEAL | IDEAL | COLD (-8.78%) |
-| 20 | COLD (-39.09%) | COLD (-12.76%) | COLD (-14.95%) | COLD (-29.85%) |
+| 20 | COLD (-39.09%) | COLD (-4.98%) | COLD (-14.95%) | COLD (-29.85%) |
 
 **Fighter 20 note:** [Why the published v14.3 snapshot is COLD at level 20](https://github.com/kmart01123/kinetic-vanguard/issues/122#issuecomment-5389467514)
 
