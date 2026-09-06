@@ -1,5 +1,7 @@
 # Pyrokinesis Apex evaluation
 
+Historical evaluation of the Pyrokinesis-only addition. Cryokinesis and Electrokinesis were subsequently adopted with the same 3d8 packet; the combined evaluation is maintained separately.
+
 The maintainer selected **3d8 fire**, matching Psychokinesis's Apex dice count. At Fighter 18, once per Attack action, a Manifested Strike hit deals this separate packet to the struck creature. Each new Attack action refreshes it, including Action Surge. It costs no Psi or Blood Tax, does not double on critical hits, and respects Resistance and Immunity even beside a Tier-2 rider or with Holdout.
 
 This implements the Pyrokinesis portion of [#122](https://github.com/kmart01123/kinetic-vanguard/issues/122). Other discipline decisions and the Psychokinesis/Refined Holdout question remain open. Rules stay on unreleased v15.0.0, with schema 2.10.0 and projection 1.6.0; the 2d8 candidate was never published.

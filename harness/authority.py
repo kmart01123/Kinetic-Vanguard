@@ -112,7 +112,7 @@ class AuthorityModel:
         apex = self.projection["core"]["psionic_apex"]
         if level < int(apex["minimum_level"]):
             return None
-        for field in ("psychokinesis_manifested_strike_hit", "pyrokinesis_manifested_strike_hit"):
+        for field in ("psychokinesis_manifested_strike_hit", "pyrokinesis_manifested_strike_hit", "cryokinesis_manifested_strike_hit", "electrokinesis_manifested_strike_hit"):
             packet = apex[field]
             if discipline_id == packet["discipline_id"]:
                 return packet

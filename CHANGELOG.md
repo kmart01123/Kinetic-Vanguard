@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Adopted the tested Fighter-18 3d8 cold Cryokinesis and 3d8 lightning Electrokinesis Apex packets. All four disciplines now use one shared Discipline Maturation procedure with their own damage type, once per Attack action, normal defenses, no critical doubling, and no resource cost. Existing Pyrokinesis/Psychokinesis outcomes and Refined Holdout remain unchanged. This added playable content stays within the unreleased v15.0.0 line; schema advances to 2.11.0 and projection to 1.7.0.
+
 - Added Pyrokinesis Maturation to Fighter-18 Psionic Apex: once per Attack action, a Manifested Strike hit deals a separate 3d8 fire packet to the struck creature, refreshed by a new Attack action. The packet costs no Psi or Blood Tax, does not double on a critical hit, and respects Resistance and Immunity even with a Tier-2 rider or Holdout. This new playable content joins the existing unreleased v15.0.0 line; schema advances to 2.10.0 and harness projection to 1.6.0.
 
 - Completed the approved v14.4 resolution simplification: Action Surge can activate another eligible standalone psionic Action; Electron Burst uses one 1d8/2d8/3d8 packet for every affected creature; Static Discharge targets up to 2/4/6 total creatures by tier; and Tier-2 feature/rider damage ignores Resistance across all disciplines and Advanced Training without bypassing Immunity or changing the triggering Manifested Strike or Blood Tax.

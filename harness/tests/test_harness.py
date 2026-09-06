@@ -59,14 +59,14 @@ class AuthorityProjectionTests(unittest.TestCase):
 
     def test_real_root_authority_and_complete_stable_id_inventory(self)->None:
         self.assertEqual(Path(self.model.projection["authority_path"]),DEFAULT_AUTHORITY)
-        self.assertEqual(self.model.projection["projection_version"],"1.6.0")
+        self.assertEqual(self.model.projection["projection_version"],"1.7.0")
         self.assertEqual(self.model.rules_version,"15.0.0")
-        self.assertEqual(self.model.projection["schema_version"],"2.10.0")
+        self.assertEqual(self.model.projection["schema_version"],"2.11.0")
         self.assertEqual(self.model.projection["core"]["action_economy"],{"standalone_psionic_action_limit_per_turn":None,"action_surge_allows_additional_standalone_psionic_action":True})
         self.assertEqual(self.model.holdout_formula(17)["kind"],"halve_total_rounded_down")
         self.assertEqual(self.model.holdout_formula(18),{"minimum_level":18,"maximum_level":20,"kind":"dice_plus_psionic_ability_modifier","count":1,"sides":6})
         self.assertEqual(self.model.psionic_apex_strike_packet("psychokinesis",18)["reset"],"start_of_each_attack_action")
-        self.assertIsNone(self.model.psionic_apex_strike_packet("psychokinesis",17));self.assertEqual(self.model.psionic_apex_strike_packet("pyrokinesis",18)["damage"],{"kind":"dice","count":3,"sides":8});self.assertIsNone(self.model.psionic_apex_strike_packet("pyrokinesis",17));self.assertIsNone(self.model.psionic_apex_strike_packet("electrokinesis",20))
+        self.assertIsNone(self.model.psionic_apex_strike_packet("psychokinesis",17));self.assertEqual(self.model.psionic_apex_strike_packet("pyrokinesis",18)["damage"],{"kind":"dice","count":3,"sides":8});self.assertIsNone(self.model.psionic_apex_strike_packet("pyrokinesis",17));self.assertEqual(self.model.psionic_apex_strike_packet("electrokinesis",20)["damage_type"],"lightning");self.assertEqual(self.model.psionic_apex_strike_packet("cryokinesis",20)["damage_type"],"cold");self.assertIsNone(self.model.psionic_apex_strike_packet("unknown",20))
         feature_ids=list(self.model.features)
         self.assertEqual(len(feature_ids),len(set(feature_ids)))
         self.assertEqual(set(self.model.disciplines),{"pyrokinesis","cryokinesis","psychokinesis","electrokinesis"})
@@ -1037,26 +1037,29 @@ class DamagePlannerTests(unittest.TestCase):
         immune_planner=_KVDamagePlanner(self.model,immune,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,1,(1,),False,False,0,0,self.mastery,0,1,immune_packet);self.addCleanup(immune_planner.clear)
         immune_hit=immune_planner._roll_options(0,0,"hit",True,False,0)[0];self.assertFalse(immune_hit[2]);self.assertEqual(immune_hit[-1],0.0)
 
-    def test_pyrokinesis_apex_respects_defenses_and_refreshes_only_on_attack_actions(self)->None:
-        target=replace(self.base,ac=1,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());package=Package(None,0,0,0)
-        self.assertIsNone(_psionic_apex_packet(self.model,target,"pyrokinesis",17))
-        self.assertEqual(_psionic_apex_packet(self.model,target,"pyrokinesis",18),13.5)
-        resistant=replace(target,damage_resistances=frozenset({"fire"}))
-        self.assertEqual(_psionic_apex_packet(self.model,resistant,"pyrokinesis",20),6.5)
-        self.assertEqual(_psionic_apex_packet(self.model,replace(target,damage_immunities=frozenset({"fire"})),"pyrokinesis",20),0.0)
-        self.assertEqual(_psionic_apex_packet(self.model,replace(target,damage_vulnerabilities=frozenset({"fire"})),"pyrokinesis",20),27.0)
-        # The shared T2 penetration rule is active, but the tierless Apex still respects Resistance.
-        self.assertTrue(self.model.projection["core"]["overload"]["tier_two_damage_ignores_resistance"])
-        packet=_psionic_apex_packet(self.model,resistant,"pyrokinesis",20)
-        planner=_KVDamagePlanner(self.model,resistant,(package,),{package:(0.0,0.0)},(("holdout",(0.0,0.0,0.0)),),((),),0,4,(2,),False,False,0,0,self.mastery,0,None,packet);self.addCleanup(planner.clear)
-        self.assertAlmostEqual(planner.solve().primary,2*packet*(1-0.05**4),places=12)
-        self.assertEqual(planner.solve().aggregate,planner.solve().primary)
-        hit=planner._roll_options(0,0,"hit",True,False,0)[0];critical=planner._roll_options(0,0,"critical",True,False,0)[0]
-        self.assertFalse(hit[2]);self.assertEqual(hit[-2:],critical[-2:]);self.assertEqual(hit[-1],6.5)
-        # A standalone occupying the only action cannot deliver Apex damage.
-        standalone=Standalone("test_standalone",0,0,0,100.0,600.0,False)
-        action=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((standalone,),),0,4,(1,),False,False,0,0,self.mastery,0,None,13.5);self.addCleanup(action.clear)
-        self.assertEqual(action.solve().primary,100.0);self.assertEqual(action.solve().aggregate,600.0)
+    def test_discipline_apex_respects_defenses_and_refreshes_only_on_attack_actions(self)->None:
+        for discipline,damage_type in (("cryokinesis","cold"),("pyrokinesis","fire"),("psychokinesis","force"),("electrokinesis","lightning")):
+            with self.subTest(discipline=discipline):
+                target=replace(self.base,ac=1,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());package=Package(None,0,0,0)
+                self.assertIsNone(_psionic_apex_packet(self.model,target,discipline,17))
+                self.assertEqual(_psionic_apex_packet(self.model,target,discipline,18),13.5)
+                resistant=replace(target,damage_resistances=frozenset({damage_type}))
+                self.assertEqual(_psionic_apex_packet(self.model,resistant,discipline,20),6.5)
+                self.assertEqual(_psionic_apex_packet(self.model,replace(target,damage_immunities=frozenset({damage_type})),discipline,20),0.0)
+                self.assertEqual(_psionic_apex_packet(self.model,replace(target,damage_vulnerabilities=frozenset({damage_type})),discipline,20),27.0)
+                # The shared T2 penetration rule is active, but the tierless Apex still respects Resistance.
+                self.assertTrue(self.model.projection["core"]["overload"]["tier_two_damage_ignores_resistance"])
+                packet=_psionic_apex_packet(self.model,resistant,discipline,20)
+                planner=_KVDamagePlanner(self.model,resistant,(package,),{package:(0.0,0.0)},(("holdout",(0.0,0.0,0.0)),),((),),0,4,(2,),False,False,0,0,self.mastery,0,None,packet);self.addCleanup(planner.clear)
+                self.assertAlmostEqual(planner.solve().primary,2*packet*(1-0.05**4),places=12)
+                self.assertEqual(planner.solve().aggregate,planner.solve().primary)
+                hit=planner._roll_options(0,0,"hit",True,False,0)[0];critical=planner._roll_options(0,0,"critical",True,False,0)[0]
+                self.assertFalse(hit[2]);self.assertEqual(hit[-2:],critical[-2:]);self.assertEqual(hit[-1],6.5)
+                # A standalone occupying the only action cannot deliver Apex damage.
+                standalone=Standalone("test_standalone",0,0,0,100.0,600.0,False)
+                action=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((standalone,),),0,4,(1,),False,False,0,0,self.mastery,0,None,13.5);self.addCleanup(action.clear)
+                self.assertEqual(action.solve().primary,100.0);self.assertEqual(action.solve().aggregate,600.0)
+
 
     def test_area_damage_uses_approved_uniform_electron_packet(self)->None:
         electron=next(item for item in self.model.features["electron_burst"]["damage_tiers"] if int(item["tier"])==2)
@@ -1091,8 +1094,8 @@ class DamagePlannerTests(unittest.TestCase):
     def test_observed_state_policy_matches_current_l20_sentinel(self)->None:
         target=next(item for item in load_targets(profile="headline",levels={20}) if item.name=="Ancient White Dragon")
         primary,aggregate,selection,_schedule=_kv_dpr(self.model,self.config,target,"electrokinesis",3)
-        self.assertAlmostEqual(primary,103.8302760484084,places=10)
-        self.assertAlmostEqual(aggregate,161.957575990639,places=10)
+        self.assertAlmostEqual(primary,129.6422194614418,places=10)
+        self.assertAlmostEqual(aggregate,184.02261097609536,places=10)
         self.assertIn("electron_burst:T2",selection)
         self.assertTrue(selection.endswith("|representative=locally-modal-path|policy=observed-state-adaptive"))
 

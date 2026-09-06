@@ -126,7 +126,7 @@ def _strike_packet_options(model:AuthorityModel,target:Target,discipline_id:str,
 def _psionic_apex_packet(model:AuthorityModel,target:Target,discipline_id:str,level:int)->float|None:
     packet=model.psionic_apex_strike_packet(discipline_id,level)
     if packet is None:return None
-    expected={"psychokinesis":("force",3),"pyrokinesis":("fire",3)}
+    expected={"psychokinesis":("force",3),"pyrokinesis":("fire",3),"cryokinesis":("cold",3),"electrokinesis":("lightning",3)}
     if discipline_id not in expected:raise ValueError("Unsupported canonical Psionic Apex discipline")
     damage_type,count=expected[discipline_id]
     if packet!={"discipline_id":discipline_id,"uses_per_attack_action":1,"reset":"start_of_each_attack_action","damage_type":damage_type,"damage":{"kind":"dice","count":count,"sides":8},"critical_dice_multiplier":1,"psi_cost":0,"blood_tax":0}:raise ValueError("Unsupported canonical Psionic Apex strike packet")
