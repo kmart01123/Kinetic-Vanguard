@@ -248,3 +248,13 @@ The schema 2.7.0 migration completes the ability migration, shared-system author
 Authority schema 2.7.0 removed the obsolete consumer registries without changing playable rules, so that migration retained `rules_version` 14.3.0. The subsequent Phase Step-family rules change begins `rules_version` 14.4.0, removes the globally unused discipline-save mapping in schema 2.8.0, and advances the harness projection contract to 1.4.0. Player-facing content remains canonical for complete wording and procedures, and utility abilities with no Calculator or harness consumer remain authoritative there; the migration does not invent machine data or benchmark policy for facts no code consumes.
 
 At every representation-migration step, canonical rules wording and numerical outcomes remained unchanged. Full damage/control benchmark regeneration is required only if a changed mechanic is consumed by a maintained benchmark path, or if methodology, comparator data, roster data, or evaluator behavior changes; structural equivalence should be established with focused sentinel and projection tests first.
+
+## v14.4 resolution follow-up (#135)
+
+The shared Overload rule now owns Tier-2 feature/rider resistance penetration. Feature-local resistance flags are removed; consumer views derive Tier-2 bypass only for damage-bearing tiers. Concrete damage types stay on each feature, Immunity remains effective, and the triggering Manifested Strike and Blood Tax stay separate.
+
+Standalone psionic Actions use available action slots, including Action Surge. The canonical per-turn limit is `null` (no subclass limit), and the planner still pays each activation independently.
+
+`partial_on_success` explicitly marks forced movement with both `feet` (failed save) and `success_feet` (successful save) inside the governing saving throw. The validator requires a smaller positive success magnitude and rejects disconnected save branches or conflicting gates. Telekinetic Slam T2 remains 30/10 feet and Deflection Screen T2 remains 15/5 feet; the harness projects an explicit partial-on-success gate while retaining separate numerical branch scoring.
+
+Static Discharge authors fixed additional-target counts of 1/3/5. The Calculator's existing target-count metric now handles fixed ladders as well as proficiency-based counts, including Branching Bolt's unchanged 2/3/4 totals. Electron Burst authors one all-target damage packet, with no primary/secondary damage exception.

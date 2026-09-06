@@ -162,13 +162,13 @@ entities:
             type: text
         type: paragraph
       - items:
-          - - text: "Standalone Action limit: "
+          - - text: "Standalone Actions: "
               type: strong
-            - text: You can activate only one standalone psionic feature that requires an Action on each of your turns.
+            - text: A standalone psionic feature uses the action economy written on the feature.
               type: text
           - - text: "Action Surge: "
               type: strong
-            - text: Action Surge can grant another Attack action, but it cannot be used to activate a second standalone psionic Action feature.
+            - text: Action Surge grants another Action that can activate another eligible standalone psionic Action feature.
               type: text
         style: unordered
         type: list
@@ -946,6 +946,10 @@ entities:
             type: text
         kind: note
         type: note
+      - inlines:
+          - text: "Tier 2 Resistance Penetration: Damage dealt by a Tier 2 feature or rider ignores Resistance to its authored damage type. This applies across all disciplines and Advanced Training. Immunity remains Immunity. The triggering Manifested Strike does not inherit this benefit, and this rule does not apply to Blood Tax."
+            type: text
+        type: paragraph
     id: common_overload
     kind: feature
     level: 3
@@ -955,12 +959,13 @@ entities:
         - {tier: 1, minimum_level: 3}
         - {tier: 2, minimum_level: 10}
       action_economy:
-        standalone_psionic_action_limit_per_turn: 1
-        action_surge_allows_additional_standalone_psionic_action: false
+        standalone_psionic_action_limit_per_turn: null
+        action_surge_allows_additional_standalone_psionic_action: true
       overload:
         entity_id: common_overload
         blood_tax_per_tier: {base: 0, proficiency_bonus_multiplier: 1}
         tier_two_limit_per_attack_action: 1
+        tier_two_damage_ignores_resistance: true
         mastery: {minimum_level: 18, uses_per_rest: 1, blood_tax_divisor: 2, minimum_per_overload: 1}
     presentation_metadata:
       canonical_topic_by_area: {}
@@ -2950,7 +2955,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to four Manifested Strike dice and ignores Resistance to fire damage."
+          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to four Manifested Strike dice."
             type: text
         type: paragraph
     id: cinder_lance
@@ -2996,7 +3001,6 @@ entities:
                   value:
                     kind: manifested_strike_dice
                     count: 4
-                  ignores_resistance: true
     presentation_metadata:
       canonical_topic_by_area: {}
       primary_rules_area: pyrokinesis
@@ -3019,7 +3023,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to 5d10 and ignores Resistance to fire damage. The target makes the same Dexterity saving throw; on a failed save, it is Blinded until the end of your next turn, and on a successful save, it is not Blinded by this feature."
+          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to 5d10. The target makes the same Dexterity saving throw; on a failed save, it is Blinded until the end of your next turn, and on a successful save, it is not Blinded by this feature."
             type: text
         type: paragraph
     id: flare
@@ -3082,7 +3086,6 @@ entities:
                     kind: dice
                     count: 5
                     sides: 10
-                  ignores_resistance: true
                 - kind: saving_throw
                   ability: dexterity
                   failure:
@@ -3112,7 +3115,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to 9d10 and ignores Resistance to fire damage."
+          - text: "T2 Overload: Changes from Tier 1: The additional damage increases to 9d10."
             type: text
         type: paragraph
     id: furnace_strike
@@ -3161,7 +3164,6 @@ entities:
                     kind: dice
                     count: 9
                     sides: 10
-                  ignores_resistance: true
     presentation_metadata:
       canonical_topic_by_area: {}
       primary_rules_area: pyrokinesis
@@ -3670,15 +3672,16 @@ entities:
                 kind: selected_target
                 range_feet: 60
               steps:
-                - kind: forced_movement
-                  feet: 30
-                  success_feet: 10
-                  package_id: control_0
-                  duration: instantaneous
                 - kind: saving_throw
                   ability: strength
                   damage_on_success: half
                   failure:
+                    - kind: forced_movement
+                      feet: 30
+                      resolution: partial_on_success
+                      success_feet: 10
+                      package_id: control_0
+                      duration: instantaneous
                     - kind: damage
                       damage_type: force
                       value:
@@ -3873,7 +3876,7 @@ entities:
                 type: text
             type: paragraph
           - inlines:
-              - text: Replace the limit of one other creature with a number of other creatures equal to your Proficiency Bonus within 5 feet of the struck target. Each affected creature still takes 2 lightning damage with no saving throw.
+              - text: Replace the limit of one other creature with up to three other creatures within 5 feet of the struck target. Each affected creature still takes 2 lightning damage with no saving throw.
                 type: text
             type: paragraph
         heading:
@@ -3889,7 +3892,7 @@ entities:
           - items:
               - - text: "Damage and saving throw: "
                   type: strong
-                - text: Each affected creature still takes 2 lightning damage with no saving throw, then must make a Charisma saving throw.
+                - text: Choose up to five other creatures within 5 feet of the struck target. Each affected creature still takes 2 lightning damage with no saving throw, then must make a Charisma saving throw.
                   type: text
               - - text: "Failed save: "
                   type: strong
@@ -3943,8 +3946,8 @@ entities:
                 kind: struck_plus_additional
                 within_feet: 5
                 additional_count:
-                  kind: proficiency_bonus
-                  multiplier: 1
+                  kind: fixed
+                  value: 3
               steps:
                 - kind: damage
                   target: all
@@ -3958,8 +3961,8 @@ entities:
                 kind: struck_plus_additional
                 within_feet: 5
                 additional_count:
-                  kind: proficiency_bonus
-                  multiplier: 1
+                  kind: fixed
+                  value: 5
               steps:
                 - kind: damage
                   target: all
@@ -4073,15 +4076,15 @@ entities:
         - electrokinesis
     content:
       - inlines:
-          - text: "T0 Base: Lightning bursts through a 10-foot-radius Sphere centered on the struck target. Each creature in the Sphere must make a Charisma saving throw. The struck creature takes 2d8 lightning damage on a failed save or half as much on a successful one; each other creature takes 1d8 lightning damage on a failed save or half as much on a successful one."
+          - text: "T0 Base: Lightning bursts through a 10-foot-radius Sphere centered on the struck target. Each creature in the Sphere must make a Charisma saving throw. Each creature takes 1d8 lightning damage on a failed save or half as much on a successful one. The struck target separately takes the triggering Manifested Strike damage."
             type: text
         type: paragraph
       - inlines:
-          - text: "T1 Overload: Changes from Tier 0: The struck creature’s damage increases to 3d8, and each other creature’s damage increases to 2d8. The radius remains 10 feet."
+          - text: "T1 Overload: Changes from Tier 0: The damage increases to 2d8 for every affected creature. The radius remains 10 feet."
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: The struck creature’s damage increases to 4d8, and each other creature’s damage increases to 3d8. A creature that fails the saving throw also cannot take reactions and has Disadvantage on attack rolls until the start of your next turn."
+          - text: "T2 Overload: Changes from Tier 1: The damage increases to 3d8 for every affected creature. A creature that fails the saving throw also cannot take reactions and has Disadvantage on attack rolls until the start of your next turn."
             type: text
         type: paragraph
     id: electron_burst
@@ -4110,17 +4113,11 @@ entities:
                   damage_on_success: half
                   failure:
                     - kind: damage
-                      target: secondary
+                      target: all
                       damage_type: lightning
                       value:
                         kind: dice
                         count: 1
-                        sides: 8
-                    - kind: damage
-                      damage_type: lightning
-                      value:
-                        kind: dice
-                        count: 2
                         sides: 8
             - tier: 1
               targeting:
@@ -4135,17 +4132,11 @@ entities:
                   damage_on_success: half
                   failure:
                     - kind: damage
-                      target: secondary
+                      target: all
                       damage_type: lightning
                       value:
                         kind: dice
                         count: 2
-                        sides: 8
-                    - kind: damage
-                      damage_type: lightning
-                      value:
-                        kind: dice
-                        count: 3
                         sides: 8
             - tier: 2
               targeting:
@@ -4160,17 +4151,11 @@ entities:
                   damage_on_success: half
                   failure:
                     - kind: damage
-                      target: secondary
+                      target: all
                       damage_type: lightning
                       value:
                         kind: dice
                         count: 3
-                        sides: 8
-                    - kind: damage
-                      damage_type: lightning
-                      value:
-                        kind: dice
-                        count: 4
                         sides: 8
                     - kind: reaction_denial
                       package_id: control_0
@@ -4673,11 +4658,6 @@ entities:
                 topology: single
                 kind: originating_creature_if_any
               steps:
-                - kind: forced_movement
-                  feet: 15
-                  success_feet: 5
-                  package_id: control_0
-                  duration: instantaneous
                 - kind: metric
                   metric: damage_reduction
                   value:
@@ -4688,6 +4668,12 @@ entities:
                 - kind: saving_throw
                   ability: strength
                   failure:
+                    - kind: forced_movement
+                      feet: 15
+                      resolution: partial_on_success
+                      success_feet: 5
+                      package_id: control_0
+                      duration: instantaneous
                     - kind: condition
                       condition: prone
                       package_id: control_1
@@ -4774,7 +4760,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: The psychic damage increases to 4d8 and ignores Resistance to psychic damage."
+          - text: "T2 Overload: Changes from Tier 1: The psychic damage increases to 4d8."
             type: text
         type: paragraph
     id: advanced_mind_shred
@@ -4823,7 +4809,6 @@ entities:
                     kind: dice
                     count: 4
                     sides: 8
-                  ignores_resistance: true
     presentation_metadata:
       canonical_topic_by_area: {}
       primary_rules_area: advanced_training
@@ -5579,7 +5564,7 @@ navigation:
           title: Advanced Training Progression
   default_category_id: common_features
 rules_version: 14.4.0
-schema_version: 2.8.0
+schema_version: 2.9.0
 vocabularies:
   acquisition_modes:
     - id: granted

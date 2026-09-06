@@ -12,17 +12,14 @@ import { validateSemantics } from "../src/validate.js";
 const sentinelIds=["common_empathic_sense","ember_bolt","explosion_implosion","frozen_ground","glacial_spike","static_discharge"];
 const compatibilityHashes:Record<string,{calculator:string;harness:string}>={
   common_empathic_sense:{calculator:"b0cf1d38d161ef1d645d006b96d261534e8997f2ae6f7783130dbb0c60acc0f4",harness:"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"},
-  ember_bolt:{calculator:"5e43c3e724101a47467d003f11c0ced6a2b16d979df0f4fa028a4461232f5911",harness:"624dcbba39fc46a1718e8f84bce22db7eda70fecb42883ecceccb6f1538f9036"},
-  explosion_implosion:{calculator:"96c07bc6be62656a4c6716c0951031812340aa485bca12438fdbf60dd337b705",harness:"41bb1403becd0b288a35e2673bcf5174f0e7251a0acc4bb58234d699eda7bbfe"},
+  ember_bolt:{calculator:"5e43c3e724101a47467d003f11c0ced6a2b16d979df0f4fa028a4461232f5911",harness:"971ca6aebac94978a7262eb37f650c43f53640239b686aadb47bddae90a57e7c"},
+  explosion_implosion:{calculator:"96c07bc6be62656a4c6716c0951031812340aa485bca12438fdbf60dd337b705",harness:"5e1de8b9e78c240cb38faa2f6d92d8c568e9076a065750445a3204ec576c12bf"},
   frozen_ground:{calculator:"57dc03988f13ec010258d74d2b81a124ef1b0681910b4928785f00e2e541ac55",harness:"8119f049874a4768f91c1ab55c57d1006dd5c8240b4aa0192719aec073916615"},
-  glacial_spike:{calculator:"2853d1898ad77a1384c9a394c9500fa2d4b4d504a65d61ab3e52ea4a8cbc017c",harness:"9cf3a1a4fd83d065212c33e7fa7366bfdba449bc205f824bea9bcd85b6e31fdd"},
-  static_discharge:{calculator:"fed529b22681cc4ec20e3f5f52b592a4feaf2c4912d47716db6884ff0d034e61",harness:"6dc6e739d5febe412948ba450c69a360e2a3103445dc3dbbcd7ed6048d5e3f68"}
+  glacial_spike:{calculator:"2853d1898ad77a1384c9a394c9500fa2d4b4d504a65d61ab3e52ea4a8cbc017c",harness:"74629054b499514645aa5c572b25785548920af85b03f0bc9e65690a1b5f7eb7"},
+  static_discharge:{calculator:"400157966477159ef5862650e23a2ab10fde0565cb6318ca8978caf208b78f6b",harness:"fd5c5882a192176136243c9656b1a24661fe6e9244b7f208c34732bd442c5217"}
 };
 const hash=(value:unknown)=>createHash("sha256").update(canonicalJson(value)).digest("hex");
-const intentionallyChangedIds=new Set(["advanced_phase_step","advanced_improved_phase_step"]);
-const unchangedLegacySubset=(rows:any[])=>structuredClone(rows.filter(row=>!intentionallyChangedIds.has(row.entity_id)));
-const legacyCalculatorView=(features:any[])=>unchangedLegacySubset(features);
-const legacyHarnessView=(rules:any[])=>{const disciplineAliases=new Set(["glacial_spike","snow_chains","frozen_ground","arctic_tempest","absolute_zero","ember_bolt","thermal_fracture","telekinetic_shove","vectored_thrust","static_discharge"]);return unchangedLegacySubset(rules).map((rule:any)=>{if(disciplineAliases.has(rule.entity_id))rule.damage_type="discipline";if(rule.entity_id==="advanced_beguile")delete rule.targeting_by_tier;return rule;});};
+// Snapshots track the approved current contract; #135 intentionally supersedes v14.3 outcome equivalence.
 const systemFields=["proficiency_bonus_bands","psi_point_bands","psionic_focus_bands","manifested_strike_die_bands","tier_minimum_levels","action_economy","manifested_strike","overload","psionic_apex","disciplines"];
 
 test("shared progressions and core mechanics are entity-owned without Calculator or harness registries",async()=>{
@@ -31,7 +28,7 @@ test("shared progressions and core mechanics are entity-owned without Calculator
   const owners=raw.entities.flatMap((entity:any)=>Object.keys(entity.system_mechanics??{}).map(field=>[field,entity.id]));
   assert.deepEqual(owners.map(([field]:string[])=>field).sort(),[...systemFields].sort());
   const calculator=deriveCalculatorProjection(authority),hydrated=[...systemFields.slice(0,5).map(field=>(calculator as any)[field]),...systemFields.slice(5).map(field=>(calculator.harness_mechanics as any)[field])];
-  assert.equal(hash(hydrated),"687d71895e63f7fcc2448f2b2eb71a0bdd7cfd0615455e65f12bda4dca987147");
+  assert.equal(hash(hydrated),"dfa09c27779c85c1af19ff8e6d1c81482ece79e870d878be73da3918558cb6df");
 });
 
 test("every machine-consumed ability authors mechanics once and derives consumer contracts",async()=>{
@@ -39,14 +36,11 @@ test("every machine-consumed ability authors mechanics once and derives consumer
   const projection=deriveCalculatorProjection(authority),calculatorIds=projection.features.map(feature=>feature.entity_id).sort(),harnessIds=projection.harness_mechanics.feature_rules.map(rule=>rule.entity_id).sort();
   assert.equal(calculatorIds.length,30);assert.equal(harnessIds.length,27);assert.deepEqual(entities.map(entity=>entity.id).sort(),calculatorIds);
   assert.equal(raw.calculator.features,undefined);assert.equal(raw.calculator.harness_mechanics,undefined);
-  assert.equal(hash(projection.features),"a82b25a23fad5ba0daa46188b06ee0fabe363d0738cd954bfaf90fc2b67320af");
-  assert.equal(hash(projection.harness_mechanics.feature_rules),"9633ae80ebf3850e836048a40261ef971c024e41a70ac6e289b689b5a364f403");
-  const legacyCalculator=legacyCalculatorView(projection.features),legacyHarness=legacyHarnessView(projection.harness_mechanics.feature_rules);assert.ok(legacyCalculator.every((feature:any)=>!intentionallyChangedIds.has(feature.entity_id)));assert.ok(legacyHarness.every((rule:any)=>!intentionallyChangedIds.has(rule.entity_id)));
-  assert.equal(hash(legacyCalculator),"2e0814e8b20ab395aff14cf24b558082b3c12ffa32ded9ef6ef61f2dafb00afa");
-  assert.equal(hash(legacyHarness),"e914f07c839070241281297e3471092c228c936f57e01e80961cd23a0140a0ae");
+  assert.equal(hash(projection.features),"cfca5ee01baaad0921d5f251e80b3e1082471b4c364d3edc275502f37353a5bf");
+  assert.equal(hash(projection.harness_mechanics.feature_rules),"e173fa64b553f90a6b6afec166a436653a47243e78b9c79b13001706e7ffacc8");
   for(const entity of entities){
     const calculator=projection.features.find(feature=>feature.entity_id===entity.id);assert.ok(calculator,entity.id);assert.deepEqual(projectCalculatorMechanics(entity),calculator,`${entity.id} Calculator projection`);
-    const harness=projection.harness_mechanics.feature_rules.find(rule=>rule.entity_id===entity.id)??null;assert.deepEqual(projectHarnessMechanics(entity),harness,`${entity.id} harness projection`);
+    const harness=projection.harness_mechanics.feature_rules.find(rule=>rule.entity_id===entity.id)??null;assert.deepEqual(projectHarnessMechanics(entity,projection.harness_mechanics.overload),harness,`${entity.id} harness projection`);
     if(sentinelIds.includes(entity.id)){assert.equal(hash(calculator),compatibilityHashes[entity.id]!.calculator,`${entity.id} Calculator compatibility contract`);assert.equal(hash(harness),compatibilityHashes[entity.id]!.harness,`${entity.id} harness compatibility contract`);}
   }
 });

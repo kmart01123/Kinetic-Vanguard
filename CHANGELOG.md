@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Completed the approved v14.4 resolution simplification: Action Surge can activate another eligible standalone psionic Action; Electron Burst uses one 1d8/2d8/3d8 packet for every affected creature; Static Discharge targets up to 2/4/6 total creatures by tier; and Tier-2 feature/rider damage ignores Resistance across all disciplines and Advanced Training without bypassing Immunity or changing the triggering Manifested Strike or Blood Tax.
+- Expressed Telekinetic Slam and Deflection Screen successful-save movement with an explicit `partial_on_success` primitive tied to their Strength saves, preserving both existing movement outcomes. Moved resistance penetration to shared Overload authority, removed per-feature flags, and updated consumer projections and action planning. Schema advances to 2.9.0 and harness projection to 1.5.0; these approved rules changes continue the existing unreleased v14.4.0 line.
+
 - Made the external-review bridge reject provider output that explicitly describes its own review as bootstrap, unfinished, or still in progress while preserving concise final results and substantive findings that discuss similar product concepts.
 - Completed the behavior-preserving rider-first representation migration for every machine-consumed ability: delivery and targeting topology are independent, all riders share one Manifested Strike rider slot, known selectors replace opaque topology, and canonical mechanics author concrete D&D damage/save facts. All 30 Calculator entries and 27 harness feature rules derive from those neutral per-entity primitives; benchmark scenario and scoring policy remain outside canonical rules mechanics.
 - Standardized the Phase Step family on fixed Strength saving throws, and made Improved Phase Step explicitly deal force damage at every tier regardless of Discipline.

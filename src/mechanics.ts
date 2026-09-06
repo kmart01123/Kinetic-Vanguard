@@ -1,4 +1,4 @@
-import type {CalculatorDamage,CalculatorFeature,CalculatorMetric,CalculatorSave,Entity,HarnessControlEffect,HarnessControlTier,HarnessFeatureRule,MechanicsStep,MechanicsSurface,MechanicsTargeting,MechanicsTier,MechanicsValue} from "./types.js";
+import type {CalculatorDamage,CalculatorFeature,CalculatorMetric,CalculatorSave,Entity,HarnessMechanics,HarnessControlEffect,HarnessControlTier,HarnessFeatureRule,MechanicsStep,MechanicsSurface,MechanicsTargeting,MechanicsTier,MechanicsValue} from "./types.js";
 
 const disciplineIds=["pyrokinesis","cryokinesis","psychokinesis","electrokinesis"] as const;
 type Gate="on_reach"|"on_failed_save"|"while_in_area";
@@ -44,7 +44,7 @@ function calculatorTier(tier:MechanicsTier):NonNullable<CalculatorFeature["tiers
 }
 
 function totalTargetMetric(surfaces:MechanicsSurface[]):CalculatorMetric|undefined{
-  const surface=surfaces.find(candidate=>candidate.tiers?.length===3&&candidate.tiers.every(tier=>tier.targeting.kind==="struck_plus_additional")&&candidate.tiers.some(tier=>tier.targeting.kind==="struck_plus_additional"&&tier.targeting.additional_count.kind==="proficiency_bonus"));if(!surface?.tiers)return undefined;
+  const surface=surfaces.find(candidate=>candidate.tiers?.length===3&&candidate.tiers.every(tier=>tier.targeting.kind==="struck_plus_additional"));if(!surface?.tiers)return undefined;
   return {kind:"fixed_plus_proficiency_bonus_multiplier",label:"total_targets",unit:"creatures",values:surface.tiers.map(tier=>{
     const targeting=tier.targeting as Extract<MechanicsTargeting,{kind:"struck_plus_additional"}>,count=targeting.additional_count;
     return count.kind==="fixed"?{tier:tier.tier,fixed:1+count.value,multiplier:0}:{tier:tier.tier,fixed:1,multiplier:count.multiplier};
@@ -94,7 +94,7 @@ function controlEffect(located:LocatedStep,includeAllRole=true):ProjectedControl
   if(step.kind==="condition")return{gate,conditions:[step.condition],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{})};
   if(step.kind==="reaction_denial")return{gate,outcomes:["reaction_denial"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{})};
   if(step.kind==="attack_modifier")return{gate,outcomes:["attack_disadvantage"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{}),attack_scope:step.scope};
-  if(step.kind==="forced_movement")return step.success_feet!==undefined?{gate:"on_reach",outcomes:["forced_movement"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{}),failed_save_magnitude_feet:step.feet,successful_save_magnitude_feet:step.success_feet}:{gate,outcomes:["forced_movement"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{}),magnitude_feet:step.feet,...(step.requires_condition?{requires_condition:step.requires_condition}:{})};
+  if(step.kind==="forced_movement")return step.resolution==="partial_on_success"?{gate:"partial_on_success",outcomes:["forced_movement"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{}),failed_save_magnitude_feet:step.feet,successful_save_magnitude_feet:step.success_feet!}:{gate,outcomes:["forced_movement"],duration:harnessDuration(step.duration),...(target_role?{target_role}:{}),...(package_id?{package_id}:{}),magnitude_feet:step.feet,...(step.requires_condition?{requires_condition:step.requires_condition}:{})};
   return null;
 }
 
@@ -128,14 +128,14 @@ function harnessTargeting(tier:MechanicsTier,surface:MechanicsSurface):NonNullab
   return null;
 }
 
-export function projectHarnessMechanics(entity:Entity):HarnessFeatureRule|null{
+export function projectHarnessMechanics(entity:Entity,overload:HarnessMechanics["overload"]):HarnessFeatureRule|null{
   if(!entity.mechanics)return null;const surfaces=entity.mechanics.surfaces,tiers=surfaces.flatMap(surface=>(surface.tiers??[]).map(tier=>({surface,tier}))).sort((left,right)=>left.tier.tier-right.tier.tier);
   const hasHarnessFacts=surfaces.some(surface=>surface.damage_type)||tiers.some(({tier})=>tierSteps(tier).some(item=>item.step.kind==="damage"||item.step.kind==="armor_class_modifier"||controlEffect(item,tier.targeting.kind==="area")!==null));if(!hasHarnessFacts)return null;
   const authoredDisciplines=entity.classifications.rules_area.filter((area):area is typeof disciplineIds[number]=>disciplineIds.includes(area as typeof disciplineIds[number]));if(!authoredDisciplines.length&&entity.classifications.rules_area.includes("advanced_training"))authoredDisciplines.push(...disciplineIds);
   const damageSteps=tiers.flatMap(({tier})=>tierSteps(tier).flatMap(item=>item.step.kind==="damage"?[item.step]:[])),damageTypes=uniqueValues([...surfaces.flatMap(surface=>surface.damage_type?[surface.damage_type]:[]),...damageSteps.map(step=>step.damage_type)]),damage_type=damageTypes[0];if(damageSteps.length&&!damage_type)throw new Error(`${entity.id} lacks an explicit damage type`);if(damageTypes.length>1)throw new Error(`${entity.id} uses multiple explicit damage types`);
   const targeting=tiers.map(({surface,tier})=>harnessTargeting(tier,surface)).filter((row):row is NonNullable<HarnessFeatureRule["targeting_by_tier"]>[number]=>row!==null);
   const controls:HarnessControlTier[]=[];let previousTier:MechanicsTier|undefined;for(const {surface,tier} of tiers){const control=harnessControlTier(tier,surface.delivery.kind==="rider"),damageSignature=(candidate:MechanicsTier|undefined)=>candidate?tierSteps(candidate).filter(item=>item.step.kind==="damage").map(item=>item.step):[],currentDamage=damageSignature(tier),priorDamage=damageSignature(previousTier),scaledRestatement=surface.delivery.kind==="rider"&&currentDamage.length>0&&priorDamage.length>0&&JSON.stringify(currentDamage)!==JSON.stringify(priorDamage);if(control&&(!controls.length||!samePackage(control,controls.at(-1)!)||scaledRestatement))controls.push(control);previousTier=tier;}
-  const ignored=tiers.filter(({tier})=>tierSteps(tier).some(item=>item.step.kind==="damage"&&item.step.ignores_resistance)).map(({tier})=>tier.tier);
+  const ignored=tiers.filter(({tier})=>tier.tier===2&&overload.tier_two_damage_ignores_resistance&&tierSteps(tier).some(item=>item.step.kind==="damage")).map(({tier})=>tier.tier);
   const armor=tiers.flatMap(({tier})=>tierSteps(tier).flatMap(item=>item.step.kind==="armor_class_modifier"?[{tier:tier.tier,value:Math.abs(item.step.value)}]:[]));
   const recurrences=[...new Set(surfaces.flatMap(surface=>surface.recurrence?[surface.recurrence]:[]))];if(recurrences.length>1)throw new Error(`${entity.id} uses multiple recurrence contracts`);const recurrence=recurrences[0];
   return {entity_id:entity.id,discipline_ids:[...authoredDisciplines],...(damage_type?{damage_type}:{}),...(ignored.length?{ignore_resistance_tiers:ignored}:{}),...(surfaces.some(surface=>surface.interactions?.kinetic_mastery==="replace")?{replaces_mastery:true}:{}),...(targeting.length?{targeting_by_tier:targeting}:{}),...(armor.length?{armor_class_reduction_by_tier:armor}:{}),...(recurrence==="remaining_round_starts"?{damage_repetition:"remaining_round_starts" as const,starts_persistent_zone:true}:{}),...(recurrence==="start_of_affected_turn_after_repeat_save"?{damage_timing:"start_of_affected_turn_after_repeat_save" as const}:{}),...(controls.length?{control_tiers:controls}:{})};

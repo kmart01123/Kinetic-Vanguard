@@ -20,7 +20,7 @@ export function selectSystemMechanics(authority:Authority):Required<EntitySystem
 }
 
 export function deriveCalculatorProjection(authority:Authority):CalculatorProjection{
-  const system=selectSystemMechanics(authority),features=authority.entities.flatMap(entity=>{const projected=projectCalculatorMechanics(entity);return projected?[projected]:[];}),feature_rules=authority.entities.flatMap(entity=>{const projected=projectHarnessMechanics(entity);return projected?[projected]:[];});
+  const system=selectSystemMechanics(authority),features=authority.entities.flatMap(entity=>{const projected=projectCalculatorMechanics(entity);return projected?[projected]:[];}),feature_rules=authority.entities.flatMap(entity=>{const projected=projectHarnessMechanics(entity,system.overload);return projected?[projected]:[];});
   return {...authority.calculator,
     proficiency_bonus_bands:structuredClone(system.proficiency_bonus_bands),psi_point_bands:structuredClone(system.psi_point_bands),psionic_focus_bands:structuredClone(system.psionic_focus_bands),manifested_strike_die_bands:structuredClone(system.manifested_strike_die_bands),tier_minimum_levels:structuredClone(system.tier_minimum_levels),
     harness_mechanics:{action_economy:structuredClone(system.action_economy),manifested_strike:structuredClone(system.manifested_strike),overload:structuredClone(system.overload),psionic_apex:structuredClone(system.psionic_apex),disciplines:structuredClone(system.disciplines),feature_rules},features

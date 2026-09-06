@@ -336,8 +336,8 @@ test("Feature Deck computes the newly projected values and authored save metadat
   let detail=root.querySelector<HTMLElement>("#calculator-feature-results")!;assert.match(normalizedDeckText(detail),/Constitution save · Tiers 0–2/u);assert.match(normalizedDeckText(detail),/Concentration.*up to 1 minute/u);
   detail=clickDeckCard(document,"vectored_thrust");assert.match(normalizedDeckText(detail),/Fly Speed: 60 feet/u);assert.match(normalizedDeckText(detail),/30 \+ \(5 × Proficiency Bonus 6\) = 60 feet/u);assert.match(normalizedDeckText(detail),/Concentration.*up to 10 minutes/u);
   detail=clickDeckCard(document,"common_empathic_sense");assert.match(normalizedDeckText(detail),/Active Scan uses: 3/u);assert.match(normalizedDeckText(detail),/floor\(Proficiency Bonus 6 ÷ 2\) = 3/u);assert.match(normalizedDeckText(detail),/Passive Insight bonus: \+5/u);
-  detail=clickDeckCard(document,"static_discharge");assert.match(normalizedDeckText(detail),/Total targets: 7 creatures/u);
-  detail=clickDeckCard(document,"electron_burst");assert.match(normalizedDeckText(detail),/Rider damage: 4d8 on a failed save/u);assert.match(normalizedDeckText(detail),/Secondary target damage: 3d8 on a failed save/u);
+  detail=clickDeckCard(document,"static_discharge");assert.match(normalizedDeckText(detail),/Total targets: 6 creatures/u);
+  detail=clickDeckCard(document,"electron_burst");assert.match(normalizedDeckText(detail),/Rider damage: 3d8 on a failed save/u);assert.doesNotMatch(normalizedDeckText(detail),/Secondary target damage:/u);
   detail=clickDeckCard(document,"arctic_tempest");assert.match(normalizedDeckText(detail),/Damage: 10d10 on a failed save/u);
   detail=clickDeckCard(document,"flare");assert.equal(detail.querySelector<HTMLElement>(".calculator__save")?.textContent,"Dexterity save · Tiers 0–2");
   detail=clickDeckCard(document,"advanced_mind_lock");assert.equal(detail.querySelector<HTMLElement>(".calculator__save")?.textContent,"Intelligence save · Tiers 0–2");

@@ -59,10 +59,10 @@ class AuthorityProjectionTests(unittest.TestCase):
 
     def test_real_root_authority_and_complete_stable_id_inventory(self)->None:
         self.assertEqual(Path(self.model.projection["authority_path"]),DEFAULT_AUTHORITY)
-        self.assertEqual(self.model.projection["projection_version"],"1.4.0")
+        self.assertEqual(self.model.projection["projection_version"],"1.5.0")
         self.assertEqual(self.model.rules_version,"14.4.0")
-        self.assertEqual(self.model.projection["schema_version"],"2.8.0")
-        self.assertEqual(self.model.projection["core"]["action_economy"],{"standalone_psionic_action_limit_per_turn":1,"action_surge_allows_additional_standalone_psionic_action":False})
+        self.assertEqual(self.model.projection["schema_version"],"2.9.0")
+        self.assertEqual(self.model.projection["core"]["action_economy"],{"standalone_psionic_action_limit_per_turn":None,"action_surge_allows_additional_standalone_psionic_action":True})
         self.assertEqual(self.model.holdout_formula(17)["kind"],"halve_total_rounded_down")
         self.assertEqual(self.model.holdout_formula(18),{"minimum_level":18,"maximum_level":20,"kind":"dice_plus_psionic_ability_modifier","count":1,"sides":6})
         self.assertEqual(self.model.psionic_apex_strike_packet("psychokinesis",18)["reset"],"start_of_each_attack_action")
@@ -106,11 +106,11 @@ class AuthorityProjectionTests(unittest.TestCase):
 
     def test_action_economy_mutation_fails_closed(self)->None:
         source=DEFAULT_AUTHORITY.read_text(encoding="utf-8")
-        probe="      action_surge_allows_additional_standalone_psionic_action: false"
+        probe="      action_surge_allows_additional_standalone_psionic_action: true"
         self.assertIn(probe,source)
         with tempfile.TemporaryDirectory() as directory:
             authority=Path(directory)/"KineticVanguard.yaml"
-            authority.write_text(source.replace(probe,"      action_surge_allows_additional_standalone_psionic_action: true",1),encoding="utf-8")
+            authority.write_text(source.replace(probe,"      action_surge_allows_additional_standalone_psionic_action: false",1),encoding="utf-8")
             with self.assertRaisesRegex(AuthorityError,"action_economy|action_surge_allows_additional"):AuthorityModel.load(authority)
 
     def test_progression_bands_cover_every_supported_level_once(self)->None:
@@ -961,11 +961,11 @@ class DamagePlannerTests(unittest.TestCase):
         result=planner._actions(0,0,True,True,0,0,0,0,2,False,0,False)
         self.assertEqual(result.choice,("end_turn",False))
 
-    def test_standalone_consumes_one_slot_and_remains_capped_during_action_surge(self)->None:
+    def test_action_surge_allows_two_standalones_with_one_slot_each(self)->None:
         target=replace(self.base,ac=1,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());package=Package(None,0,0,0);standalone=Standalone("forked_lightning",0,0,0,100.0,100.0,False)
-        planner=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((standalone,),),0,1,(2,),False,False,0,0,self.mastery,0,1,None);self.addCleanup(planner.clear)
-        self.assertAlmostEqual(planner.solve().aggregate,100.0,places=12)
-        self.assertEqual(planner.selection().count("forked_lightning:T0"),1)
+        planner=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((standalone,),),0,1,(2,),False,False,0,0,self.mastery,0,self.model.projection["core"]["action_economy"]["standalone_psionic_action_limit_per_turn"],None);self.addCleanup(planner.clear)
+        self.assertAlmostEqual(planner.solve().aggregate,200.0,places=12)
+        self.assertEqual(planner.selection().count("forked_lightning:T0"),2)
 
     def test_pre_roll_rider_cost_is_spent_on_a_miss_without_outcome_lookahead(self)->None:
         target=replace(self.base,ac=30,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());plain=Package(None,0,0,0);rider=Package("branching_bolt",0,1,0);packages=(plain,rider)
@@ -1037,17 +1037,41 @@ class DamagePlannerTests(unittest.TestCase):
         immune_planner=_KVDamagePlanner(self.model,immune,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,1,(1,),False,False,0,0,self.mastery,0,1,immune_packet);self.addCleanup(immune_planner.clear)
         immune_hit=immune_planner._roll_options(0,0,"hit",True,False,0)[0];self.assertFalse(immune_hit[2]);self.assertEqual(immune_hit[-1],0.0)
 
-    def test_area_damage_tiers_preserve_primary_and_reduce_only_approved_packets(self)->None:
+    def test_area_damage_uses_approved_uniform_electron_packet(self)->None:
         electron=next(item for item in self.model.features["electron_burst"]["damage_tiers"] if int(item["tier"])==2)
-        self.assertEqual((electron["damage"]["count"],electron["secondary_damage"]["count"]),(4,3))
+        self.assertEqual(electron["damage"]["count"],3);self.assertNotIn("secondary_damage",electron)
         arctic=[int(item["damage"]["count"]) for item in self.model.features["arctic_tempest"]["damage_tiers"]]
         self.assertEqual(arctic,[8,9,10])
+
+    def test_tier_two_penetration_preserves_immunity_and_base_strike_resistance(self)->None:
+        plain=replace(self.base,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset())
+        for discipline,entity,damage_type in (("cryokinesis","glacial_spike","cold"),("pyrokinesis","ember_bolt","fire"),("psychokinesis","telekinetic_shove","force"),("electrokinesis","static_discharge","lightning")):
+            resistant=replace(plain,damage_resistances=frozenset({damage_type}));immune=replace(resistant,damage_immunities=frozenset({damage_type}))
+            def values(target,tier):return _rider_values(self.model,target,discipline,6,20,6,5,12,Package(entity,tier,0,0))
+            with self.subTest(discipline=discipline):
+                self.assertEqual(values(resistant,2),values(plain,2))
+                self.assertEqual(values(immune,2),(0.0,0.0))
+                self.assertLess(values(resistant,0)[0],values(plain,0)[0])
+                normal=dict(_strike_packet_options(self.model,plain,discipline,20,5,12))["normal"]
+                # Inspect every offered strike: a rider's tier never alters this separate packet.
+                options=dict(_strike_packet_options(self.model,resistant,discipline,20,5,12))
+                if "normal" in options:self.assertLess(options["normal"][1],normal[1])
+
+    def test_electron_parity_and_static_target_ladder_at_representative_levels(self)->None:
+        target=replace(self.base,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset())
+        for level,pb in ((7,3),(11,4),(20,6)):
+            for tier in (0,1,2):
+                if tier==2 and level<10:continue
+                primary,aggregate=_rider_values(self.model,target,"electrokinesis",6,level,pb,5,10,Package("electron_burst",tier,0,0))
+                self.assertAlmostEqual(aggregate,6*primary)
+                primary,aggregate=_rider_values(self.model,target,"electrokinesis",10,level,pb,5,10,Package("static_discharge",tier,0,0))
+                self.assertEqual(aggregate,(2,4,6)[tier]*primary)
 
     def test_observed_state_policy_matches_current_l20_sentinel(self)->None:
         target=next(item for item in load_targets(profile="headline",levels={20}) if item.name=="Ancient White Dragon")
         primary,aggregate,selection,_schedule=_kv_dpr(self.model,self.config,target,"electrokinesis",3)
-        self.assertAlmostEqual(primary,116.29434009056969,places=10)
-        self.assertAlmostEqual(aggregate,171.23091363060868,places=10)
+        self.assertAlmostEqual(primary,103.8302760484084,places=10)
+        self.assertAlmostEqual(aggregate,161.957575990639,places=10)
         self.assertIn("electron_burst:T2",selection)
         self.assertTrue(selection.endswith("|representative=locally-modal-path|policy=observed-state-adaptive"))
 
@@ -1132,6 +1156,16 @@ class CanonicalControlTests(unittest.TestCase):
                 row=_catalog_rider_scenario(self.model,self.config,target,discipline,entity,2);recipe=row["delivery_recipe"]
                 self.assertEqual((recipe["id"],recipe["gate"],recipe["retry_model"],recipe["save_ability"],recipe["additional_control_gate"]),("single_activation_automatic","automatic","single_activation",save,"failed_save"))
                 self.assertAlmostEqual(row["whole"],100.0)
+
+    def test_explicit_partial_on_success_preserves_existing_control_branch_values(self)->None:
+        target=self.level_target(20)
+        for entity in ("telekinetic_slam","advanced_deflection_screen"):
+            projection=deepcopy(self.model.projection)
+            feature=next(row for row in projection["features"] if row["entity_id"]==entity)
+            partial=next(effect for tier in feature["control_tiers"] if tier["tier"]==2 for effect in tier["effects"] if effect["gate"]=="partial_on_success")
+            partial["gate"]="on_reach"
+            legacy=AuthorityModel(projection)
+            self.assertEqual(_kv_scenario(self.model,self.config,target,"psychokinesis",entity,2),_kv_scenario(legacy,self.config,target,"psychokinesis",entity,2))
 
     def test_pure_save_recipe_families_remain_unchanged(self)->None:
         target=self.level_target(20)

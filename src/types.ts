@@ -113,12 +113,12 @@ export type MechanicsTargeting=
   | {topology:"discrete_multi";kind:"eligible_creatures_in_range";range_feet:number};
 export type MechanicsTargetRole="all"|"primary"|"secondary";
 export type MechanicsStep=
-  | {id?:string;kind:"damage";target?:MechanicsTargetRole;damage_type:MechanicsDamageType;value:MechanicsValue;ignores_resistance?:boolean}
+  | {id?:string;kind:"damage";target?:MechanicsTargetRole;damage_type:MechanicsDamageType;value:MechanicsValue}
   | {id?:string;package_id?:string;application?:"while_in_area";kind:"speed_modifier";target?:MechanicsTargetRole;feet:number;duration:MechanicsDuration}
   | {id?:string;package_id?:string;application?:"while_in_area";kind:"speed_zero";target?:MechanicsTargetRole;duration:MechanicsDuration;replaces?:string}
   | {id?:string;package_id?:string;application?:"while_in_area";kind:"condition";target?:MechanicsTargetRole;condition:"blinded"|"charmed"|"incapacitated"|"prone"|"restrained"|"stunned";duration:MechanicsDuration;replaces?:string}
   | {id?:string;package_id?:string;application?:"while_in_area";kind:"reaction_denial";target?:MechanicsTargetRole;duration:MechanicsDuration}
-  | {id?:string;package_id?:string;application?:"while_in_area";kind:"forced_movement";target?:MechanicsTargetRole;feet:number;success_feet?:number;duration:MechanicsDuration;directions?:Array<{mode:string;direction:"away_from_origin"|"toward_origin"}>;requires_condition?:"blinded"|"charmed"|"incapacitated"|"prone"|"restrained"|"stunned"}
+  | {id?:string;package_id?:string;application?:"while_in_area";kind:"forced_movement";target?:MechanicsTargetRole;feet:number;resolution?:"partial_on_success";success_feet?:number;duration:MechanicsDuration;directions?:Array<{mode:string;direction:"away_from_origin"|"toward_origin"}>;requires_condition?:"blinded"|"charmed"|"incapacitated"|"prone"|"restrained"|"stunned"}
   | {kind:"saving_throw";ability:MechanicsSaveAbility;damage_on_success?:"half";independent_per_target?:boolean;resolve_even_if_damage_prevented?:boolean;maximum_size?:"tiny"|"small"|"medium"|"large"|"huge"|"gargantuan";required_creature_type?:"humanoid";repeat?:{trigger:"start_of_affected_turn";disadvantage?:boolean};failure:MechanicsStep[];success?:MechanicsStep[]}
   | {kind:"difficult_terrain";target?:MechanicsTargetRole;duration:MechanicsDuration}
   | {package_id?:string;application?:"while_in_area";kind:"speed_reduction";target?:MechanicsTargetRole;duration:MechanicsDuration}
@@ -254,7 +254,7 @@ export interface HarnessTargeting {
 }
 export type HarnessControlDuration="instantaneous"|"until_end_current_turn"|"until_start_next_turn"|"until_end_next_turn"|"while_in_area"|"one_minute_concentration"|"one_hour"|"eight_hours";
 export interface HarnessControlEffect {
-  gate:"on_reach"|"on_failed_save"|"while_in_area";
+  gate:"on_reach"|"on_failed_save"|"partial_on_success"|"while_in_area";
   conditions?:HarnessCondition[];
   outcomes?:HarnessControlOutcome[];
   duration:HarnessControlDuration;
@@ -291,9 +291,9 @@ export interface HarnessFeatureRule {
   control_tiers?:HarnessControlTier[];
 }
 export interface HarnessMechanics {
-  action_economy:{standalone_psionic_action_limit_per_turn:1;action_surge_allows_additional_standalone_psionic_action:false};
+  action_economy:{standalone_psionic_action_limit_per_turn:null;action_surge_allows_additional_standalone_psionic_action:true};
   manifested_strike:{entity_id:"common_manifested_strike";rider_repeatability:"per_manifested_strike";damage_type_source:"discipline";holdout:{damage_type:"force";declaration_timing:"before_attack_roll";formulas:Array<{minimum_level:number;maximum_level:number;kind:"halve_total_rounded_down"}|{minimum_level:number;maximum_level:number;kind:"dice_plus_psionic_ability_modifier";count:1;sides:6}>};critical_dice_multiplier:2;attack_bonus:{base:number;components:Array<"psionic_ability_modifier"|"proficiency_bonus"|"psionic_focus">};save_dc:{base:number;components:Array<"psionic_ability_modifier"|"proficiency_bonus"|"psionic_focus">}};
-  overload:{entity_id:"common_overload";blood_tax_per_tier:{base:number;proficiency_bonus_multiplier:number};tier_two_limit_per_attack_action:1;mastery:{minimum_level:18;uses_per_rest:1;blood_tax_divisor:2;minimum_per_overload:1}};
+  overload:{entity_id:"common_overload";blood_tax_per_tier:{base:number;proficiency_bonus_multiplier:number};tier_two_limit_per_attack_action:1;tier_two_damage_ignores_resistance:true;mastery:{minimum_level:18;uses_per_rest:1;blood_tax_divisor:2;minimum_per_overload:1}};
   psionic_apex:{minimum_level:18;psychokinesis_manifested_strike_hit:{discipline_id:"psychokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";damage_type:"force";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0}};
   disciplines:HarnessDiscipline[];
   feature_rules:HarnessFeatureRule[];

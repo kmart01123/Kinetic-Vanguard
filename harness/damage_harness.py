@@ -151,7 +151,7 @@ def _fracture(rule:dict[str,Any],tier:int)->int:
 class _KVDamagePlanner:
     """Exact finite-horizon policy over only information observable at each declaration."""
 
-    def __init__(self,model:AuthorityModel,target:Target,packages:tuple[Package,...],rider_values:dict[Package,tuple[float,float]],strike_options:tuple[tuple[str,tuple[float,float,float]],...],standalones_by_round:tuple[tuple[Standalone,...],...],attack_bonus:int,attacks_per_action:int,action_slots_by_round:tuple[int,...],studied_enabled:bool,prowess_enabled:bool,psi_pool:int,blood_budget:int,mastery:dict[str,Any],mastery_uses:int,standalone_limit:int,apex_packet:float|None)->None:
+    def __init__(self,model:AuthorityModel,target:Target,packages:tuple[Package,...],rider_values:dict[Package,tuple[float,float]],strike_options:tuple[tuple[str,tuple[float,float,float]],...],standalones_by_round:tuple[tuple[Standalone,...],...],attack_bonus:int,attacks_per_action:int,action_slots_by_round:tuple[int,...],studied_enabled:bool,prowess_enabled:bool,psi_pool:int,blood_budget:int,mastery:dict[str,Any],mastery_uses:int,standalone_limit:int|None,apex_packet:float|None)->None:
         self.model=model;self.target=target;self.packages=packages;self.rider_values=rider_values;self.strike_options=strike_options;self.standalones_by_round=standalones_by_round;self.attack_bonus=attack_bonus;self.attacks_per_action=attacks_per_action;self.action_slots_by_round=action_slots_by_round;self.studied_enabled=studied_enabled;self.prowess_enabled=prowess_enabled;self.psi_pool=psi_pool;self.blood_budget=blood_budget;self.mastery=mastery;self.mastery_uses=mastery_uses;self.standalone_limit=standalone_limit;self.apex_packet=apex_packet
         self.fractures=tuple(_fracture(model.features[package.entity_id],package.tier) if package.entity_id else 0 for package in packages);self.tier_two_limit=int(model.projection["core"]["overload"]["tier_two_limit_per_attack_action"]);self._roll_probability_cache={}
 
@@ -178,7 +178,7 @@ class _KVDamagePlanner:
         attack=self._attacks(round_index,action_slots_left-1,self.attacks_per_action,0,self.apex_packet is not None,studied,prowess,ac_reduction,psi,blood,mastery_remaining,mastery_mode,zone_active,standalone_count)
         candidate=_Decision(attack.score,("attack",))
         if self._better(candidate,best):best=candidate
-        if standalone_count<self.standalone_limit:
+        if self.standalone_limit is None or standalone_count<self.standalone_limit:
             for standalone_index,standalone in enumerate(self.standalones_by_round[round_index]):
                 if standalone.starts_zone and zone_active:continue
                 next_psi=psi+standalone.psi
@@ -277,7 +277,7 @@ class _KVDamagePlanner:
 
 def _validate_damage_policy_contract(model:AuthorityModel,config:dict[str,Any])->None:
     action_economy=model.projection["core"]["action_economy"]
-    if action_economy!={"standalone_psionic_action_limit_per_turn":1,"action_surge_allows_additional_standalone_psionic_action":False}:raise ValueError("Unsupported canonical standalone psionic Action policy")
+    if action_economy!={"standalone_psionic_action_limit_per_turn":None,"action_surge_allows_additional_standalone_psionic_action":True}:raise ValueError("Unsupported canonical standalone psionic Action policy")
     fighter=config["fighter_mechanics"]
     if fighter["studied_attacks"]!={"trigger":"resolved_miss_after_hit_instead_effects","benefit":"advantage_on_next_attack_against_same_target","expiry":"end_of_next_turn"}:raise ValueError("Unsupported Studied Attacks timing policy")
     if fighter["combat_prowess"]!={"trigger":"attack_roll_miss","effect":"hit_instead","uses_per_turn":1,"reset":"start_of_next_turn","activation_policy":"optimal_after_observed_miss","eligible_after_failed_attack_roll_bonus":True}:raise ValueError("Unsupported Combat Prowess timing policy")
@@ -319,7 +319,7 @@ def _kv_dpr_for_schedule(model:AuthorityModel,config:dict[str,Any],target:Target
                 if rule.get("damage_repetition")=="remaining_round_starts":repetitions=max(0,int(config["methodology"]["rounds"])-1-round_index);primary*=repetitions;aggregate*=repetitions
                 standalones.append(Standalone(rule["entity_id"],tier,package.psi,package.blood,primary,aggregate,bool(rule.get("starts_persistent_zone"))))
         standalones_by_round.append(tuple(standalones))
-    standalone_limit=int(model.projection["core"]["action_economy"]["standalone_psionic_action_limit_per_turn"]);apex_packet=_psionic_apex_packet(model,target,discipline_id,level);planner=_KVDamagePlanner(model,target,package_tuple,rider_values,strike_options,tuple(standalones_by_round),attack_bonus,attacks_per_action,action_slots,studied_enabled,prowess_enabled,psi_pool,blood_budget,mastery,mastery_uses,standalone_limit,apex_packet)
+    standalone_limit=model.projection["core"]["action_economy"]["standalone_psionic_action_limit_per_turn"];apex_packet=_psionic_apex_packet(model,target,discipline_id,level);planner=_KVDamagePlanner(model,target,package_tuple,rider_values,strike_options,tuple(standalones_by_round),attack_bonus,attacks_per_action,action_slots,studied_enabled,prowess_enabled,psi_pool,blood_budget,mastery,mastery_uses,standalone_limit,apex_packet)
     score=planner.solve();selection=planner.selection();planner.clear()
     return score.primary/len(action_slots),score.aggregate/len(action_slots),selection
 
