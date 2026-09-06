@@ -1,6 +1,6 @@
 # Roadmap
 
-## v14.4
+## v15.0 development (continuing the v14.4 roadmap)
 
 ### Rider-first mechanical model
 
@@ -18,9 +18,9 @@ Implement the approved #135 rules together: normal Action Surge access for stand
 
 Tracking: [#135](https://github.com/kmart01123/kinetic-vanguard/issues/135).
 
-### Gravitic Press disposition
+### Gravitic Press retirement
 
-After the rider-model migration boundary is secure, make an explicit keep, rework, or retire decision for Gravitic Press. Do not change its mechanics as part of the representation refactor.
+The maintainer chose retirement. Remove Gravitic Press from the Advanced Training pool, rules publication, and consumer projections. Removing a published option is a breaking change, so the next development rules version is v15.0.0 under the versioning policy.
 
 Tracking: [#133](https://github.com/kmart01123/kinetic-vanguard/issues/133).
 

@@ -34,10 +34,10 @@ test("shared progressions and core mechanics are entity-owned without Calculator
 test("every machine-consumed ability authors mechanics once and derives consumer contracts",async()=>{
   const [{authority},source]=await Promise.all([loadAuthority(),readFile("KineticVanguard.yaml","utf8")]),raw=YAML.parse(source) as any,entities=authority.entities.filter(entity=>entity.mechanics);
   const projection=deriveCalculatorProjection(authority),calculatorIds=projection.features.map(feature=>feature.entity_id).sort(),harnessIds=projection.harness_mechanics.feature_rules.map(rule=>rule.entity_id).sort();
-  assert.equal(calculatorIds.length,30);assert.equal(harnessIds.length,27);assert.deepEqual(entities.map(entity=>entity.id).sort(),calculatorIds);
+  assert.equal(calculatorIds.length,29);assert.equal(harnessIds.length,26);assert.deepEqual(entities.map(entity=>entity.id).sort(),calculatorIds);
   assert.equal(raw.calculator.features,undefined);assert.equal(raw.calculator.harness_mechanics,undefined);
-  assert.equal(hash(projection.features),"cfca5ee01baaad0921d5f251e80b3e1082471b4c364d3edc275502f37353a5bf");
-  assert.equal(hash(projection.harness_mechanics.feature_rules),"e173fa64b553f90a6b6afec166a436653a47243e78b9c79b13001706e7ffacc8");
+  assert.equal(hash(projection.features),"1e9a401bea74253c35018371cd1875de2c9f2da868e18e4649115595c392763d");
+  assert.equal(hash(projection.harness_mechanics.feature_rules),"3cbde7cabe412917d225ab4f99cb4f44204e3eb37e74a36da8b461c928fcadad");
   for(const entity of entities){
     const calculator=projection.features.find(feature=>feature.entity_id===entity.id);assert.ok(calculator,entity.id);assert.deepEqual(projectCalculatorMechanics(entity),calculator,`${entity.id} Calculator projection`);
     const harness=projection.harness_mechanics.feature_rules.find(rule=>rule.entity_id===entity.id)??null;assert.deepEqual(projectHarnessMechanics(entity,projection.harness_mechanics.overload),harness,`${entity.id} harness projection`);

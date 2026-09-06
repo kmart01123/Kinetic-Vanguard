@@ -2,13 +2,13 @@
 
 ## Status and authority
 
-This is the accepted v14.4 inventory of canonical rules **v14.4.0**. It is non-normative: `KineticVanguard.yaml` remains the sole rules authority. This document records delivery, targeting topology, activation, and behavior-preservation sentinels for the representation refactor.
+This is the accepted v14.4 inventory of canonical rules **v15.0.0**. It is non-normative: `KineticVanguard.yaml` remains the sole rules authority. This document records delivery, targeting topology, activation, and behavior-preservation sentinels for the representation refactor.
 
 Delivery and targeting are orthogonal. An “area rider” in prose means `delivery = rider` plus `targeting topology = area`; it is not a distinct lifecycle. No inventory label combines the two axes, and there is no composite-rider concept.
 
 ## Scope
 
-The Subclass Feature Reference contains 34 rows: 31 concrete ability entities and three Advanced Training choice-grant summaries. The table inventories the 31 concrete abilities exactly once. The choice-grant rows are progression events, not independently resolvable abilities.
+The Subclass Feature Reference contains 33 rows: 30 concrete ability entities and three Advanced Training choice-grant summaries. The table inventories the 30 concrete abilities exactly once. The choice-grant rows are progression events, not independently resolvable abilities.
 
 Shared chassis entities such as Manifested Strike, Signature Rider, Overload, Kinetic Mastery, Psi Reservoir, and Discipline Signature Save define the lifecycle used by these abilities but are not migration candidates. Kinetic Mastery remains separate from the Manifested Strike rider slot.
 
@@ -68,7 +68,6 @@ Activation remains independent from both axes.
 | `advanced_mind_shred` | Mind Shred | 15 | `rider` | `single` | Before roll; resolves on hit | Struck target; no save | Tier 2 bypasses psychic Resistance through the shared Overload rule. |
 | `advanced_beguile` | Beguile | 15 | `standalone` | `mixed` (`single`, `discrete_multi`) | Action; Concentration | One lower-tier target; up to five targets within 60 feet at Tier 2; Charisma save | Higher tiers replace lower effects; save remains Charisma regardless of Discipline. |
 | `advanced_mind_lock` | Mind Lock | 15 | `rider` | `single` | Before roll; resolves on hit | Struck target; Intelligence save | Tier 2 replaces Incapacitated with Stunned while retaining Blinded. |
-| `advanced_gravitic_press` | Gravitic Press | 15 | `standalone` | `area` | Action; Concentration | Persistent 15-foot-radius, 20-foot-high Cylinder within 60 feet; Strength save | No-save area effects and save-gated effects remain separate. |
 | `advanced_barrier` | Barrier | 15 | `standalone` | `self` | Bonus Action; Concentration | Self mode selection; no save | Mode count, duration, and replacement procedure remain unchanged. |
 | `advanced_improved_phase_step` | Improved Phase Step | 15 | `standalone` | `area` | Bonus Action | Endpoint 5-foot Sphere; up to three other creatures; fixed Strength save and force damage | Tier damage dice and half damage on a successful save remain unchanged; user remains unaffected. |
 | `advanced_overload_mastery_ii` | Overload Mastery II | 18 | `passive` | `none` | Passive | No target | Exactly one additional rest-based use remains intact. |
@@ -80,4 +79,4 @@ Activation remains independent from both axes.
 
 ## Implementation result
 
-The canonical schema and semantic validator enforce the two axes, the shared rider slot, selector-specific targeting requirements, and concrete D&D facts. Calculator and harness views remain deterministic projections from entity-owned mechanics. The v14.4 Phase Step-family ruling and the approved #135 simplifications are reflected here. All Tier-2 feature/rider damage uses the shared Overload resistance rule, and standalone psionic Actions can use Action Surge. Gravitic Press design remains separate under #133.
+The canonical schema and semantic validator enforce the two axes, the shared rider slot, selector-specific targeting requirements, and concrete D&D facts. Calculator and harness views remain deterministic projections from entity-owned mechanics. The v14.4 Phase Step-family ruling and the approved #135 simplifications are reflected here. All Tier-2 feature/rider damage uses the shared Overload resistance rule, and standalone psionic Actions can use Action Surge. Gravitic Press is retired under #133.

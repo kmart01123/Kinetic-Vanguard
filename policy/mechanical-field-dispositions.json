@@ -137,8 +137,7 @@
     "calculator.harness_mechanics.feature_rules[].control_tiers[].effects[].gate": {
       "on_failed_save": {"disposition": "generalize", "target": "saving_throw.failure branch"},
       "partial_on_success": {"disposition":"promote","target":"Explicit save-dependent movement with authored failure and success magnitudes."},
-      "on_reach": {"disposition": "generalize", "target": "unconditional delivery step; remove harness reach terminology"},
-      "while_in_area": {"disposition": "generalize", "target": "persistent-area occupancy trigger"}
+      "on_reach": {"disposition": "generalize", "target": "unconditional delivery step; remove harness reach terminology"}
     }
   }
 }

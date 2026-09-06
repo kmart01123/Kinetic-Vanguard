@@ -309,7 +309,7 @@ export function validateSemantics(authority:Authority):Diagnostic[]{
   }
   const onboardingIds=collectOnboardingIds(authority.onboarding);diagnostics.push(...duplicateDiagnostics(onboardingIds.map(item=>item.value),"onboarding.id_duplicate","onboarding ID"));
   for(const item of onboardingIds)if(entities.has(item.value))diagnostics.push({severity:"error",code:"onboarding.entity_collision",message:`Onboarding ID ${item.value} collides with a publishable entity`,path:item.path});
-  if(authority.entities.length!==44)diagnostics.push({severity:"error",code:"onboarding.entity_boundary",message:`Onboarding must remain outside the 44-entity publication boundary; found ${authority.entities.length} entities`,path:"/entities"});
+  if(authority.entities.length!==43)diagnostics.push({severity:"error",code:"onboarding.entity_boundary",message:`Onboarding must remain outside the 43-entity publication boundary; found ${authority.entities.length} entities`,path:"/entities"});
   const sectionIds=new Set([authority.onboarding.basic_turn.id,authority.onboarding.build_checklist.id,authority.onboarding.disciplines.id,authority.onboarding.glossary.id,authority.onboarding.next_destinations.id]);
   const calculatorCardAreas=new Map<string,string>([
     ...authority.calculator.utility_cards.map(card=>[card.id,entities.get(card.source_entity_id)?.presentation_metadata.primary_rules_area??""] as const),
