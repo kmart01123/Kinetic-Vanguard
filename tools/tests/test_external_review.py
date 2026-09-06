@@ -961,6 +961,60 @@ class ReviewBridgeTests(unittest.TestCase):
                 )
                 self.assertEqual(len(adapters[provider].prompts), 1)
 
+    def test_pr_143_nonfinal_reviews_block_both_providers_in_all_mode(self) -> None:
+        statuses = (
+            "placeholder",
+            "**PLACEHOLDER**!",
+            "Review placeholder.",
+            "Placeholder response.",
+            "This review is unfinished.",
+            "The review remains incomplete.",
+            "Review not performed.",
+            "This review has not been completed.",
+            "I have not performed the review.",
+        )
+        for provider in ("claude", "grok"):
+            for location in ("body", "title", "detail"):
+                for status in statuses:
+                    with self.subTest(provider=provider, location=location, status=status):
+                        invalid = execution(
+                            provider,
+                            verdict="PASS" if location == "body" else "FINDINGS",
+                            body=status if location == "body" else "One issue was identified.",
+                            findings=() if location == "body" else (
+                                bridge.ReviewFinding(
+                                    "LOW",
+                                    status if location == "title" else "Material finding",
+                                    status if location == "detail" else "A focused correction is needed.",
+                                ),
+                            ),
+                        )
+                        outcomes = {name: execution(name) for name in ("claude", "grok")}
+                        outcomes[provider] = invalid
+                        github, repository, _adapters = self.assert_review_rejected(
+                            ("claude", "grok"), outcomes, "non-final review output",
+                            metadata_sequence=[metadata(), metadata()],
+                        )
+                        self.assertEqual(github.comments, [])
+                        self.assertTrue(repository.cleaned)
+
+    def test_final_reviews_can_report_unfinished_product_behavior(self) -> None:
+        for text in (
+            "The setup wizard is unfinished.",
+            "The document review feature is incomplete.",
+            "The implementation has not been completed.",
+            "The UI still displays placeholder text.",
+        ):
+            with self.subTest(text=text):
+                result = execution(
+                    "grok", verdict="FINDINGS", body=text,
+                    findings=(bridge.ReviewFinding("LOW", "Incomplete product behavior", text),),
+                )
+                posted, _github, _repository = self.run_bridge(
+                    ("claude", "grok"), {"claude": execution("claude"), "grok": result}
+                )
+                self.assertEqual(len(posted), 2)
+
     def test_final_reviews_with_process_vocabulary_remain_valid(self) -> None:
         cases = (
             ("pass", execution("grok", body="No material findings.")),

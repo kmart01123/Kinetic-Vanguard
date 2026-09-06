@@ -52,6 +52,25 @@ NON_FINAL_REVIEW_TITLES = frozenset(
     )
 )
 NON_FINAL_REVIEW_PATTERNS = (
+    # Bare placeholder fields are not completed review evidence.
+    re.compile(
+        r"^(?:(?:review|result|response|output) )?placeholder"
+        r"(?: (?:review|result|response|output))?$"
+    ),
+    # Keep the subject tied to this review, not an unfinished product feature.
+    re.compile(
+        r"(?:\b(?:this|the|my|our) review|^review)"
+        r"(?: (?:is|remains))?(?: still)?"
+        r" (?:unfinished|incomplete|not (?:performed|completed|conducted|started))\b"
+    ),
+    re.compile(
+        r"(?:\b(?:this|the|my|our) review|^review)"
+        r" has not been (?:performed|completed|conducted|started)\b"
+    ),
+    re.compile(
+        r"\b(?:i|we)(?: have)? not (?:performed|completed|conducted|started)"
+        r" (?:this|the|my|our) review\b"
+    ),
     re.compile(r"\b(?:the )?review(?: request)? is being processed\b"),
     re.compile(
         r"\breview(?: (?:is|remains))?"

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Reject bare placeholder review fields and explicit unfinished or unperformed review statements, including the two failures observed during PR #143 review. Regressions cover both providers, all review fields, and atomic rejection without suppressing legitimate findings about incomplete product features.
+
 - Made external-review failures identify their component and stage, retain bounded redacted diagnostics, offer known authentication remediation, and report skipped providers plus posting state without changing exact-head validation, isolation, or pre-post all-provider atomicity. `doctor` now preserves safe command-failure reasons and names missing CLI flags.
 
 - Made the external-review bridge reject provider output that explicitly describes its own review as bootstrap, unfinished, or still in progress while preserving concise final results and substantive findings that discuss similar product concepts.
