@@ -28,7 +28,7 @@ Tracking: [#133](https://github.com/kmart01123/kinetic-vanguard/issues/133).
 
 Diagnose the level-20 comparator crossover and subclass scaling by discipline before proposing mechanics. Keep single-target damage findings separate from discipline control tradeoffs, and prefer surgical late-game maturation if a rules change is justified.
 
-The maintainer adopted 3d8 Apex for all four disciplines at Fighter 18: cold, fire, force, and lightning respectively. One shared Discipline Maturation procedure preserves normal defenses, no critical doubling, no resource cost, and one use per Attack action. The combined canonical version is being validated against the accepted Cryokinesis/Electrokinesis experiment and the prior Pyrokinesis benchmark. Refined Holdout remains available to every discipline.
+The maintainer adopted 3d8 Apex for all four disciplines at Fighter 18: cold, fire, force, and lightning respectively. One shared Discipline Maturation procedure preserves normal defenses, no critical doubling, no resource cost, and one use per Attack action. The fresh full benchmark matches the accepted Cryokinesis/Electrokinesis experiment, preserves prior Pyrokinesis/Psychokinesis results, and documents the accepted six-target Electrokinesis increase; see the [evaluation](discipline-apex-evaluation.md). Refined Holdout remains available to every discipline.
 
 Tracking: [#122](https://github.com/kmart01123/kinetic-vanguard/issues/122).
 

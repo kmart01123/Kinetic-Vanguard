@@ -21,8 +21,6 @@ Version 14.1.0 restores maintained damage and control benchmark harness source. 
 
 **Unreleased development snapshot** — canonical rules **v15.0.0**; current published release **v14.3.0**.
 
-This retained snapshot evaluated the Pyrokinesis-only Apex addition. The newly adopted Cryokinesis/Electrokinesis packets are awaiting refreshed publication evidence.
-
 Target profile: `headline`. The maintained headline benchmark uses 47 creature profiles from SRD 5.2.1 at levels 7, 11, 15, and 20. These are exact analytical full-roster results, with creatures weighted equally within their level.
 
 Battle Master and Eldritch Knight define the comparison envelope for the front-door Single-Target Damage result. `IDEAL` means Kinetic Vanguard falls between the two comparator values, inclusive. `COLD` is below both; `HOT` is above both. The percentage on COLD and HOT cells shows the signed distance outside the nearest comparator boundary. `N/A` is reserved for a comparison that cannot be evaluated. This is a comparator-envelope benchmark, not a universal real-play balance tolerance, and `IDEAL` is not proof of balance in every game.
@@ -38,7 +36,7 @@ The front-door damage view is the single-target benchmark: primary-target DPR at
 | 7 | COLD (-6.99%) | IDEAL | COLD (-2.61%) | IDEAL |
 | 11 | COLD (-19.14%) | IDEAL | COLD (-0.20%) | IDEAL |
 | 15 | COLD (-15.14%) | IDEAL | IDEAL | COLD (-8.78%) |
-| 20 | COLD (-39.09%) | COLD (-1.09%) | COLD (-14.95%) | COLD (-29.85%) |
+| 20 | COLD (-32.10%) | COLD (-1.09%) | COLD (-14.95%) | COLD (-16.80%) |
 
 **Fighter 20 note:** [Why the published v14.3 snapshot is COLD at level 20](https://github.com/kmart01123/kinetic-vanguard/issues/122#issuecomment-5389467514)
 
