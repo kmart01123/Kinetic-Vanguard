@@ -601,12 +601,12 @@ entities:
                   type: text
               - - text: "Attack 3: "
                   type: strong
-                - text: Rolls 5 and deals 5 + 4 = 9 strike damage. Electron Burst rolls 6 + 5 = 11 damage for the struck creature and 6 damage for each of the other four creatures after their failed saves, so attack 3 deals 9 + 11 + (6 × 4) = 44 damage.
+                - text: Rolls 5 and deals 5 + 4 = 9 strike damage. Electron Burst rolls 6 damage for each of the five creatures after their failed saves, so attack 3 deals 9 + (6 × 5) = 39 damage.
                   type: text
             style: ordered
             type: list
           - inlines:
-              - text: The total is 21 + 26 + 44 = 91 lightning damage.
+              - text: The total is 21 + 26 + 39 = 86 lightning damage.
                 type: text
             type: paragraph
         discipline: electrokinesis
@@ -649,7 +649,7 @@ entities:
                   type: text
               - - text: "Damage: "
                   type: strong
-                - text: The five creatures have taken 91 lightning damage in total.
+                - text: The five creatures have taken 86 lightning damage in total.
                   type: text
               - - text: "Conditions: "
                   type: strong
