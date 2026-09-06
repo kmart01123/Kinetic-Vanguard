@@ -2219,7 +2219,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "Pyrokinesis Maturation: At Fighter level 18, once during each Attack action, when you hit a creature with a Manifested Strike, deal an additional 2d8 fire damage to that creature. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax. This packet has no Overload tier: Resistance and Immunity apply normally, even when the strike delivers a Tier-2 rider or uses the Holdout Option."
+          - text: "Pyrokinesis Maturation: At Fighter level 18, once during each Attack action, when you hit a creature with a Manifested Strike, deal an additional 3d8 fire damage to that creature. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax. This packet has no Overload tier: Resistance and Immunity apply normally, even when the strike delivers a Tier-2 rider or uses the Holdout Option."
             type: text
         type: paragraph
       - inlines:
@@ -2253,7 +2253,7 @@ entities:
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
           damage_type: fire
-          damage: {kind: dice, count: 2, sides: 8}
+          damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
           psi_cost: 0
           blood_tax: 0

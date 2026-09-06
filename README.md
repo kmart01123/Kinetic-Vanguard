@@ -21,6 +21,8 @@ Version 14.1.0 restores maintained damage and control benchmark harness source. 
 
 **Unreleased development snapshot** — canonical rules **v15.0.0**; current published release **v14.3.0**.
 
+This retained v15.0.0 snapshot evaluated the earlier 2d8 Pyrokinesis candidate. The current 3d8 candidate is awaiting fresh evidence.
+
 Target profile: `headline`. The maintained headline benchmark uses 47 creature profiles from SRD 5.2.1 at levels 7, 11, 15, and 20. These are exact analytical full-roster results, with creatures weighted equally within their level.
 
 Battle Master and Eldritch Knight define the comparison envelope for the front-door Single-Target Damage result. `IDEAL` means Kinetic Vanguard falls between the two comparator values, inclusive. `COLD` is below both; `HOT` is above both. The percentage on COLD and HOT cells shows the signed distance outside the nearest comparator boundary. `N/A` is reserved for a comparison that cannot be evaluated. This is a comparator-envelope benchmark, not a universal real-play balance tolerance, and `IDEAL` is not proof of balance in every game.
