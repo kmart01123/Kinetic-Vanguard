@@ -21,7 +21,7 @@ Version 14.1.0 restores maintained damage and control benchmark harness source. 
 
 **Retained development snapshot** — canonical rules **v14.4.0**; current published release **v14.3.0**.
 
-The v15.0.0 development line retires Gravitic Press. This snapshot was evaluated on v14.4.0; it is retained because Advanced Training is excluded from the headline benchmark and all retained feature, core, progression, and discipline projections are identical. It is not a new v15.0.0 benchmark run.
+The v15.0.0 development line retires Gravitic Press and tests Pyrokinesis Maturation. This retained snapshot was evaluated on v14.4.0 and does not include the new Apex packet; fresh candidate evidence is pending.
 
 
 Target profile: `headline`. The maintained headline benchmark uses 47 creature profiles from SRD 5.2.1 at levels 7, 11, 15, and 20. These are exact analytical full-roster results, with creatures weighted equally within their level.
