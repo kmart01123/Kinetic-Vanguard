@@ -28,7 +28,7 @@ Tracking: [#133](https://github.com/kmart01123/kinetic-vanguard/issues/133).
 
 Diagnose the level-20 comparator crossover and subclass scaling by discipline before proposing mechanics. Keep single-target damage findings separate from discipline control tradeoffs, and prefer surgical late-game maturation if a rules change is justified.
 
-The Pyrokinesis candidate adds a Fighter-18 once-per-Attack-action 3d8 fire hit packet through Psionic Apex, with normal defenses and no critical doubling or resource cost. The maintainer raised the candidate from 2d8 to 3d8 to match Psychokinesis’s dice count; fresh validation is pending. Other discipline maturation and the Psychokinesis/Refined Holdout intent remain separate decisions.
+The Pyrokinesis candidate adds a Fighter-18 once-per-Attack-action 3d8 fire hit packet through Psionic Apex, with normal defenses and no critical doubling or resource cost. The maintainer selected 3d8 to match Psychokinesis’s dice count. Focused tests and the fresh full benchmark support the change; see the [evaluation](pyrokinesis-apex-evaluation.md). Other discipline maturation and the Psychokinesis/Refined Holdout intent remain separate decisions.
 
 Tracking: [#122](https://github.com/kmart01123/kinetic-vanguard/issues/122).
 
