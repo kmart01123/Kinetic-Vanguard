@@ -158,6 +158,48 @@ class ReviewBridgeError(RuntimeError):
     """A fail-closed bridge error suitable for a concise CLI diagnostic."""
 
 
+@dataclass(frozen=True)
+class FailureDiagnostic:
+    component: str
+    stage: str
+    detail: str
+    exit_code: int | None = None
+    remediation: str = ""
+
+    def render(self) -> str:
+        code = f" (exit {self.exit_code})" if self.exit_code is not None else ""
+        remedy = f"; {self.remediation}" if self.remediation else ""
+        return f"{self.component} {self.stage} failed{code}: {diagnostic_text(self.detail)}{remedy}"
+
+
+class DiagnosticError(ReviewBridgeError):
+    def __init__(self, diagnostic: FailureDiagnostic) -> None:
+        self.diagnostic = diagnostic
+        super().__init__(diagnostic.render())
+
+
+@dataclass
+class FailureContext:
+    component: str
+    stage: str
+    redactions: tuple[str, ...] = ()
+    posting_started: bool = False
+    posted_count: int = 0
+
+    def error(self, error: ReviewBridgeError) -> DiagnosticError:
+        prior = error.diagnostic if isinstance(error, DiagnosticError) else None
+        detail = diagnostic_text(prior.detail if prior else str(error), self.redactions)
+        return DiagnosticError(FailureDiagnostic(
+            self.component, self.stage, detail,
+            prior.exit_code if prior else None,
+            prior.remediation if prior else "",
+        ))
+
+
+class ReviewAttemptError(ReviewBridgeError):
+    """A diagnostic already containing exact attempt and posting state."""
+
+
 class Runner(Protocol):
     def run(
         self,
@@ -330,7 +372,7 @@ def validate_cli_capabilities(provider_key: str, help_output: str) -> None:
         ) is not None
 
     missing = [
-        label
+        f"{label} ({'/'.join(spellings)})"
         for label, spellings in REQUIRED_CLI_CAPABILITIES[provider_key]
         if not any(has_exact_option(spelling) for spelling in spellings)
     ]
@@ -387,23 +429,54 @@ def resolve_provider_executable(
     return resolved, safe_path
 
 
+def diagnostic_text(text: str, redactions: Sequence[str] = (), *, limit: int | None = 600) -> str:
+    # Normalize control noise before redaction, and redact before bounding.
+    text = ANSI_PATTERN.sub("", text)
+    text = "".join(char for char in text if char in "\n\t" or not unicodedata.category(char).startswith("C"))
+    source = os.environ
+    home = Path(source.get("HOME", str(Path.home()))).expanduser()
+    grok_home = Path(source.get("GROK_HOME", str(home / ".grok"))).expanduser()
+    auth = Path(source.get("GROK_AUTH_PATH", str(grok_home / "auth.json"))).expanduser()
+    try:
+        resolved_auth = str(auth.resolve(strict=False))
+    except (OSError, RuntimeError):
+        resolved_auth = str(auth)
+    values = (*redactions, str(auth), resolved_auth)
+    for value in sorted(set(values), key=len, reverse=True):
+        if value:
+            text = text.replace(value, "[REDACTED]")
+    text = redact_sensitive(text)
+    return " ".join(text.split())[:limit] or "no diagnostic emitted"
+
+
 def safe_failure_detail(completed: subprocess.CompletedProcess[str]) -> str:
-    lines = [
-        line.strip()
-        for line in redact_sensitive(completed.stderr).splitlines()
-        if line.strip()
-    ]
-    return f": {lines[-1][:300]}" if lines else ""
+    if completed.stderr.strip():
+        return f": {diagnostic_text(completed.stderr, limit=None)}"
+    # stdout may contain a prompt or review, so expose only a known error message field.
+    if completed.stdout.strip():
+        if re.search(r"not (?:signed in|authenticated|logged in)|no auth credentials", completed.stdout, re.I):
+            return ": provider reports missing authentication"
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            message = error.get("message") if isinstance(error, dict) else error
+            if isinstance(message, str):
+                return f": {diagnostic_text(message, limit=None)}"
+        return ": no stderr diagnostic; stdout omitted because it may contain review or prompt content"
+    return ": no diagnostic emitted"
 
 
 def require_success(
     completed: subprocess.CompletedProcess[str], description: str
 ) -> subprocess.CompletedProcess[str]:
     if completed.returncode != 0:
-        raise ReviewBridgeError(
-            f"{description} failed with exit code {completed.returncode}"
-            f"{safe_failure_detail(completed)}"
-        )
+        raise DiagnosticError(FailureDiagnostic(
+            "Bridge", description, safe_failure_detail(completed).removeprefix(": "),
+            completed.returncode,
+        ))
     return completed
 
 
@@ -984,6 +1057,18 @@ class ProviderAdapter:
         self.source_environment = source_environment
 
     def run(self, worktree: Path, prompt: str) -> ProviderExecution:
+        source = self.source_environment if self.source_environment is not None else os.environ
+        sensitive = tuple(value for key, value in source.items() if re.search(r"token|secret|password|api.?key|auth.?path", key, re.I))
+        context = FailureContext(self.spec.display_name, "executable lookup", (prompt, *prompt.splitlines(), *sensitive))
+        try:
+            return self._run(worktree, prompt, context)
+        except ReviewBridgeError as error:
+            raise context.error(error) from error
+        except OSError as error:
+            safe = ReviewBridgeError(error.strerror or type(error).__name__)
+            raise context.error(safe) from error
+
+    def _run(self, worktree: Path, prompt: str, context: FailureContext) -> ProviderExecution:
         source = (
             self.source_environment
             if self.source_environment is not None
@@ -992,6 +1077,7 @@ class ProviderAdapter:
         executable, safe_path = resolve_provider_executable(
             self.spec, source, review_worktree=worktree
         )
+        context.stage = "temporary isolation setup"
         try:
             temporary = tempfile.TemporaryDirectory(
                 prefix=f"kv-{self.spec.key}-review-"
@@ -1018,6 +1104,7 @@ class ProviderAdapter:
                 child_env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
             elif self.spec.key == "grok":
                 auth_file = resolve_grok_auth_file(source)
+                context.redactions += (str(auth_file),)
                 auth_directory = validate_grok_auth_directory(
                     auth_file, source, worktree
                 )
@@ -1033,6 +1120,7 @@ class ProviderAdapter:
                 if self.spec.key == "grok"
                 else (str(executable), "--version")
             )
+            context.stage = "version lookup"
             version = require_success(
                 self.runner.run(
                     version_command,
@@ -1043,6 +1131,7 @@ class ProviderAdapter:
                 f"{self.spec.display_name} version lookup",
             )
             cli_version = first_output_line(version.stdout or version.stderr, "unknown")
+            context.stage = "capability lookup"
             help_result = require_success(
                 self.runner.run(
                     (str(executable), "--help"),
@@ -1063,6 +1152,7 @@ class ProviderAdapter:
                 command = self._claude_command(
                     executable, worktree, claude_isolation
                 )
+                context.stage = "review invocation"
                 completed = self.runner.run(
                     command,
                     cwd=worktree,
@@ -1073,6 +1163,7 @@ class ProviderAdapter:
             else:
                 if grok_sandbox is None:
                     raise ReviewBridgeError("Grok sandbox profile was not initialized")
+                context.stage = "sandbox configuration inspection"
                 self._validate_grok_configuration(
                     executable,
                     worktree,
@@ -1092,27 +1183,34 @@ class ProviderAdapter:
                     prompt_file,
                     grok_sandbox,
                 )
+                context.stage = "review invocation"
                 completed = self.runner.run(
                     command,
                     cwd=worktree,
                     env=child_env,
                     timeout=3600,
                 )
+                context.stage = "sandbox enforcement"
                 require_grok_sandbox_applied(completed, "Grok review")
+            context.stage = "review invocation"
             if completed.returncode != 0:
-                raise ReviewBridgeError(
-                    f"{self.spec.display_name} provider failed with exit code "
-                    f"{completed.returncode}{safe_failure_detail(completed)}"
-                )
+                detail = safe_failure_detail(completed).removeprefix(": ")
+                remedy = ""
+                if re.search(r"not (?:signed in|authenticated|logged in)|no auth credentials|unauthorized", completed.stderr + completed.stdout, re.I):
+                    remedy = "run claude auth login" if self.spec.key == "claude" else "run grok login --device-auth"
+                raise DiagnosticError(FailureDiagnostic(self.spec.display_name, context.stage, detail, completed.returncode, remedy))
+            context.stage = "structured-output parsing"
             contract, model_metadata = extract_contract(
                 completed.stdout, self.spec.display_name
             )
+            context.stage = "review-contract validation"
             result = review_result_from_contract(contract)
             if grok_sandbox is not None:
                 auth_path = grok_sandbox.auth_file.as_posix()
                 result = redact_review_result_value(result, auth_path)
                 if model_metadata is not None:
                     model_metadata = model_metadata.replace(auth_path, "[REDACTED]")
+            context.stage = "temporary cleanup"
             return ProviderExecution(
                 result=result,
                 cli_version=cli_version,
@@ -1694,7 +1792,20 @@ class ReviewBridge:
     def review(
         self, pr_number: int, provider_names: Sequence[str], prompt: str
     ) -> list[PostedComment]:
+        context = FailureContext("Bridge", "repository context", (prompt, *prompt.splitlines()))
+        try:
+            return self._review(pr_number, provider_names, prompt, context)
+        except ReviewAttemptError:
+            raise
+        except ReviewBridgeError as error:
+            state = "posted reviews: none" if not context.posting_started else f"posting attempted; outcome may be uncertain ({context.posted_count} confirmed comments)"
+            raise ReviewAttemptError(f"{context.error(error)}; {state}") from error
+
+    def _review(
+        self, pr_number: int, provider_names: Sequence[str], prompt: str, context: FailureContext
+    ) -> list[PostedComment]:
         repository_name = self.github.repository()
+        context.stage = "initial PR identity validation"
         metadata = self.github.pr_metadata(repository_name, pr_number)
         if metadata.number != pr_number:
             raise ReviewBridgeError("GitHub returned a different PR number")
@@ -1703,31 +1814,45 @@ class ReviewBridge:
                 f"PR #{pr_number} is {metadata.state}; only open PRs are supported"
             )
         self.emit(f"Exact head: {metadata.head_sha}")
+        context.stage = "commit lookup"
         self.repository.ensure_commit(metadata.base_sha)
         self.repository.ensure_commit(metadata.head_sha, pr_number=pr_number)
+        context.stage = "diff construction"
         base_to_head_diff = self.repository.base_to_head_diff(
             metadata.base_sha, metadata.head_sha
         )
         prompt_text = wrapped_prompt(prompt, metadata, base_to_head_diff)
         validated: list[tuple[ProviderSpec, ProviderExecution]] = []
+        context.stage = "detached-worktree setup"
         with self.repository.detached_worktree(pr_number, metadata.head_sha) as worktree:
+            context.stage = "symlink validation"
             self.repository.validate_worktree_symlinks(worktree)
             for provider_name in provider_names:
                 spec = PROVIDER_SPECS[provider_name]
                 adapter = self.adapters[provider_name]
                 self.emit(f"{spec.display_name}: started")
-                execution = validate_execution(
-                    adapter.run(worktree, prompt_text),
-                    spec,
-                    pr_number,
-                    metadata.head_sha,
-                )
-                self.repository.assert_clean(worktree, spec.display_name)
+                stage = "review invocation"
+                try:
+                    raw_execution = adapter.run(worktree, prompt_text)
+                    stage = "review-contract validation"
+                    execution = validate_execution(raw_execution, spec, pr_number, metadata.head_sha)
+                    stage = "dirty-worktree validation"
+                    self.repository.assert_clean(worktree, spec.display_name)
+                except ReviewBridgeError as error:
+                    failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, (prompt_text, *prompt_text.splitlines())).error(error)
+                    states = [f"{done.display_name}: validated" for done, _ in validated]
+                    states.append(f"{spec.display_name}: failed during {failure.diagnostic.stage}")
+                    remaining = provider_names[len(validated) + 1:]
+                    states.extend(f"{PROVIDER_SPECS[name].display_name}: skipped because atomic execution aborted" for name in remaining)
+                    detail = f"{failure}; {'; '.join(states)}; posted reviews: none"
+                    raise ReviewAttemptError(detail) from error
                 self.emit(
                     f"{spec.display_name}: completed ({execution.result.verdict})"
                 )
                 validated.append((spec, execution))
+            context.stage = "detached-worktree cleanup"
 
+        context.stage = "exact-head revalidation"
         live = self.github.pr_metadata(repository_name, pr_number)
         if live.state.upper() != "OPEN":
             raise ReviewBridgeError(
@@ -1742,11 +1867,14 @@ class ReviewBridge:
 
         posted: list[PostedComment] = []
         for spec, execution in validated:
+            context.stage = f"{spec.display_name} GitHub posting"
+            context.posting_started = True
             comment_id, url = self.github.post_comment(
                 repository_name,
                 pr_number,
                 render_comment(spec, metadata, execution),
             )
+            context.posted_count += 1
             self.emit(f"{spec.display_name}: posted {url}")
             posted.append(
                 PostedComment(provider=spec.key, comment_id=comment_id, url=url)
@@ -1765,8 +1893,8 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     ) -> subprocess.CompletedProcess[str]:
         try:
             return runner.run(args, cwd=cwd, env=env, timeout=30)
-        except ReviewBridgeError:
-            return subprocess.CompletedProcess(tuple(args), 127, "", "")
+        except ReviewBridgeError as error:
+            return subprocess.CompletedProcess(tuple(args), 127, "", diagnostic_text(str(error)))
 
     def version_check(
         command: str,
@@ -1777,7 +1905,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
         nonlocal healthy
         completed = safe_run((command, "--version"), env=env)
         if completed.returncode != 0:
-            lines.append(f"FAIL {label}: unavailable")
+            lines.append(f"FAIL {label} version lookup (exit {completed.returncode}){safe_failure_detail(completed)}")
             healthy = False
             return False
         lines.append(
@@ -1796,7 +1924,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
             return False
         completed = safe_run((str(executable), "--help"), env=env)
         if completed.returncode != 0:
-            lines.append(f"FAIL {display_name} safety capabilities: help unavailable")
+            lines.append(f"FAIL {display_name} safety capabilities: help lookup (exit {completed.returncode}){safe_failure_detail(completed)}")
             healthy = False
             return False
         try:
@@ -1820,7 +1948,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     if gh_available and gh_auth.returncode == 0:
         lines.append("OK   GitHub authentication: authenticated")
     else:
-        lines.append("FAIL GitHub authentication: run `gh auth login`")
+        lines.append(f"FAIL GitHub authentication{safe_failure_detail(gh_auth)}; run `gh auth login`")
         healthy = False
 
     repo = (
@@ -1848,7 +1976,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
             f"OK   repository context: {repo.stdout.strip()} ({repository_name})"
         )
     else:
-        lines.append("FAIL repository context: run inside a GitHub repository")
+        lines.append(f"FAIL repository context{safe_failure_detail(repo if repo.returncode else gh_repo)}; run inside a GitHub repository")
         healthy = False
 
     provider_source = os.environ
@@ -1885,10 +2013,10 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
         if isinstance(status, dict) and status.get("loggedIn") is True:
             lines.append("OK   Claude authentication: authenticated")
         else:
-            lines.append("FAIL Claude authentication: run `claude auth login`")
+            lines.append(f"FAIL Claude authentication{safe_failure_detail(claude_auth)}; run `claude auth login`")
             healthy = False
     else:
-        lines.append("FAIL Claude authentication: run `claude auth login`")
+        lines.append(f"FAIL Claude authentication{safe_failure_detail(claude_auth)}; run `claude auth login`")
         healthy = False
 
     try:
@@ -1921,7 +2049,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     if grok_available and grok_session_controls.returncode == 0:
         lines.append("OK   Grok session controls: compatible")
     else:
-        lines.append("FAIL Grok session controls: `--no-auto-update --no-memory` unsupported")
+        lines.append(f"FAIL Grok session controls: `--no-auto-update --no-memory` unsupported{safe_failure_detail(grok_session_controls)}")
         healthy = False
     capability_check("grok", grok_executable if grok_available else None, grok_env)
     grok_auth = (
@@ -1933,18 +2061,19 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     grok_auth_failed = (
         not grok_available
         or grok_auth.returncode != 0
+        or "not signed in" in grok_probe.lower()
         or "not authenticated" in grok_probe.lower()
         or "no auth credentials" in grok_probe.lower()
         or "failed to fetch models" in grok_probe.lower()
         or "auth(" in grok_probe.lower()
     )
     if grok_auth_failed:
-        lines.append("FAIL Grok authentication: run `grok login --device-auth`")
+        lines.append(f"FAIL Grok authentication/model access{safe_failure_detail(grok_auth)}; run `grok login --device-auth`")
         healthy = False
     else:
         lines.append("OK   Grok authentication: authenticated model access")
 
-    return healthy, [redact_sensitive(line) for line in lines]
+    return healthy, [("OK   " + diagnostic_text(line[5:])) if line.startswith("OK   ") else diagnostic_text(line) for line in lines]
 
 
 def build_parser() -> argparse.ArgumentParser:

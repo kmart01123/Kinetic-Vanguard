@@ -72,3 +72,13 @@ Safe local synthetic-sentinel probes against Claude Code 2.1.234 and Grok Build 
 The child environment removes `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, and `GITHUB_ENTERPRISE_TOKEN`, and points `GH_CONFIG_DIR` at an empty temporary directory. Providers cannot use the bridge's authenticated `gh` configuration. Only the wrapper revalidates the head and posts the final comment. Providers cannot push, merge, delete branches, mutate issues or releases, or post GitHub comments through the granted tool set.
 
 Ordinary unit tests mock provider and GitHub interactions. They do not call provider APIs, require provider authentication, or post to GitHub.
+
+## Failure diagnostics
+
+Failures identify the component, operation stage, exit code when available, a bounded sanitized diagnostic, and known login remediation. Examples include version/capability lookup, temporary isolation setup, sandbox configuration inspection/enforcement, review invocation, structured-output parsing, contract validation, dirty-worktree validation, cleanup, exact-head revalidation, and GitHub posting.
+
+`doctor` retains its compact OK/FAIL list but preserves safe runner exceptions instead of replacing them with an empty failure. Missing capabilities name the actual CLI flag. Authentication failures include the provider's login command.
+
+Provider stderr is redacted before display. When stderr is empty, only a JSON error-message field or a recognized authentication failure is surfaced from stdout; arbitrary stdout is explicitly omitted because it can contain prompt or review content. Diagnostics strip terminal/control noise, redact token-shaped values, configured/resolved Grok authentication paths and known prompt text, and bound the displayed detail. No persistent provider logs are added.
+
+If an all-provider run fails before posting, the error identifies validated and failed providers, later providers skipped because execution aborted, and `posted reviews: none`. A failure during the posting request reports uncertainty and the number of confirmed comments rather than claiming no remote write occurred. The second provider is not run after a blocking first-provider failure.

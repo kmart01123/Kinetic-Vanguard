@@ -1637,7 +1637,7 @@ class ProviderAdapterTests(unittest.TestCase):
             runner,
             source_environment={"PATH": "/usr/bin"},
         )
-        with self.assertRaisesRegex(bridge.ReviewBridgeError, "provider failed"):
+        with self.assertRaisesRegex(bridge.ReviewBridgeError, "review invocation failed"):
             adapter.run(Path("/detached"), "Review.")
         self.assertEqual(len(runner.claude_config_paths), 2)
         self.assertTrue(all(not path.exists() for path in runner.claude_config_paths))
@@ -1739,8 +1739,9 @@ class ProviderAdapterTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         bridge.ReviewBridgeError,
                         "could not enforce the custom Grok sandbox",
-                    ):
+                    ) as caught:
                         adapter.run(Path("/detached"), "Review.")
+                    self.assertIn("sandbox configuration inspection" if phase == "inspection" else "sandbox enforcement", str(caught.exception))
                 environment = runner.calls[-1]["env"]
                 assert isinstance(environment, dict)
                 self.assertFalse(Path(environment["GROK_HOME"]).exists())
@@ -2159,6 +2160,114 @@ class DoctorTests(unittest.TestCase):
             "FAIL Claude safety capabilities: Claude CLI lacks required safety capabilities",
             "\n".join(lines),
         )
+
+
+class DiagnosticTests(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = mock.patch.object(bridge.shutil, "which", return_value="/usr/bin/true")
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def adapter_error(self, output, prompt="Review.", environment=None):
+        runner = QueueRunner([completed(stdout="version"), completed(stdout=CLAUDE_HELP), output])
+        adapter = bridge.ProviderAdapter(bridge.PROVIDER_SPECS["claude"], runner, source_environment=environment or {"PATH":"/usr/bin"})
+        with self.assertRaises(bridge.DiagnosticError) as caught:
+            adapter.run(Path("/detached"), prompt)
+        return caught.exception, runner
+
+    def test_provider_failure_exposes_stage_exit_and_safe_stderr(self):
+        error, runner = self.adapter_error(completed(returncode=1, stderr="rate limit exceeded"))
+        self.assertEqual((error.diagnostic.component,error.diagnostic.stage,error.diagnostic.exit_code),("Claude","review invocation",1))
+        self.assertIn("rate limit exceeded",str(error))
+        self.assertTrue(all(not path.exists() for path in runner.claude_config_paths))
+
+    def test_stdout_fallback_accepts_error_field_but_omits_review_content(self):
+        for stdout, expected in ((bridge.json.dumps({"error":{"message":"service unavailable"}}),"service unavailable"),("private review prose","stdout omitted"),("","no diagnostic emitted")):
+            error,_ = self.adapter_error(completed(returncode=1,stdout=stdout))
+            self.assertIn(expected,str(error)); self.assertNotIn("private review prose",str(error))
+
+    def test_provider_diagnostics_redact_before_bounding_and_remove_control_noise(self):
+        prompt="private request line\nprivate second line"
+        auth="/private/credentials/auth.json"
+        stderr="prefix "*80 + prompt + " " + auth + " api_key=opaque-secret-value " + "ghp_secretvalue123456 \x1b[31m\x00\x07"
+        error,_ = self.adapter_error(completed(returncode=1,stderr=stderr),prompt,{"PATH":"/usr/bin","GROK_AUTH_PATH":auth})
+        text=str(error)
+        for forbidden in ("private request","private second",auth,"opaque-secret-value","ghp_secretvalue","\x00","\x07","\x1b"):
+            self.assertNotIn(forbidden,text)
+        self.assertLessEqual(len(error.diagnostic.detail),600)
+
+    def test_parsing_failure_is_distinct_from_process_failure(self):
+        error,_ = self.adapter_error(completed(stdout="not JSON"))
+        self.assertEqual(error.diagnostic.stage,"structured-output parsing")
+        self.assertIsNone(error.diagnostic.exit_code)
+
+    def test_known_authentication_failure_includes_provider_login(self):
+        error,_ = self.adapter_error(completed(returncode=1,stdout="Not signed in"))
+        self.assertIn("missing authentication",str(error)); self.assertIn("run claude auth login",str(error))
+
+    def test_all_mode_reports_skipped_provider_and_zero_posts(self):
+        github=FakeGitHub([metadata()]); repository=FakeRepository()
+        adapters={"claude":FakeAdapter(bridge.ReviewBridgeError("service unavailable")),"grok":FakeAdapter(execution("grok"))}
+        with self.assertRaises(bridge.ReviewBridgeError) as caught:
+            bridge.ReviewBridge(github,repository,adapters,emit=lambda _:None).review(PR_NUMBER,("claude","grok"),"Review.")
+        text=str(caught.exception)
+        self.assertIn("Claude: failed during review invocation",text)
+        self.assertIn("Grok: skipped because atomic execution aborted",text)
+        self.assertIn("posted reviews: none",text); self.assertEqual(github.comments,[])
+        self.assertEqual(adapters["grok"].prompts,[])
+
+    def test_stale_head_and_dirty_worktree_have_distinct_stage_labels(self):
+        cases=[(FakeRepository(clean_error_for="Claude"),[metadata()],"dirty-worktree validation"),(FakeRepository(),[metadata(),metadata(head=MOVED_HEAD)],"exact-head revalidation")]
+        for repository,sequence,stage in cases:
+            github=FakeGitHub(sequence)
+            with self.assertRaises(bridge.ReviewBridgeError) as caught:
+                bridge.ReviewBridge(github,repository,{"claude":FakeAdapter(execution("claude"))},emit=lambda _:None).review(PR_NUMBER,("claude",),"Review.")
+            self.assertIn(stage,str(caught.exception)); self.assertIn("posted reviews: none",str(caught.exception)); self.assertEqual(github.comments,[])
+
+    def test_doctor_preserves_runner_exception_and_reports_grok_login(self):
+        responses=[completed(stdout="git v"),completed(stdout="gh v"),completed(),completed(stdout="/repository"),completed(stdout='{"nameWithOwner":"owner/repository"}'),completed(stdout="claude v"),completed(stdout=CLAUDE_HELP),completed(stdout='{"loggedIn":true}'),completed(stdout="grok v"),completed(stdout="grok v"),completed(stdout=GROK_HELP),completed(returncode=1,stdout="Not signed in")]
+        healthy,lines=bridge.doctor(QueueRunner(responses),Path("/repository"))
+        self.assertFalse(healthy); self.assertIn("missing authentication; run `grok login --device-auth`","\n".join(lines))
+        class FailedRunner:
+            def run(self,*args,**kwargs):raise bridge.ReviewBridgeError("command timed out: test-command")
+        healthy,lines=bridge.doctor(FailedRunner(),Path("/repository"))
+        self.assertFalse(healthy); self.assertIn("command timed out: test-command","\n".join(lines))
+
+    def test_posting_failure_reports_uncertainty_without_claiming_zero_posts(self):
+        class PostingFailure(FakeGitHub):
+            def post_comment(self,*args):raise bridge.ReviewBridgeError("connection reset after request")
+        github=PostingFailure([metadata(),metadata()])
+        with self.assertRaises(bridge.ReviewBridgeError) as caught:
+            bridge.ReviewBridge(github,FakeRepository(),{"claude":FakeAdapter(execution("claude"))},emit=lambda _:None).review(PR_NUMBER,("claude",),"Review.")
+        text=str(caught.exception)
+        self.assertIn("GitHub posting",text); self.assertIn("outcome may be uncertain",text); self.assertNotIn("posted reviews: none",text)
+
+    def test_cleanup_failure_has_a_cleanup_stage_and_no_posts(self):
+        class CleanupFailure(FakeRepository):
+            @contextlib.contextmanager
+            def detached_worktree(self,*args):
+                yield Path("/detached")
+                raise bridge.ReviewBridgeError("unable to remove temporary worktree")
+        github=FakeGitHub([metadata()])
+        with self.assertRaises(bridge.ReviewBridgeError) as caught:
+            bridge.ReviewBridge(github,CleanupFailure(),{"claude":FakeAdapter(execution("claude"))},emit=lambda _:None).review(PR_NUMBER,("claude",),"Review.")
+        self.assertIn("detached-worktree cleanup",str(caught.exception)); self.assertIn("posted reviews: none",str(caught.exception)); self.assertEqual(github.comments,[])
+
+    def test_default_and_symlinked_auth_paths_are_redacted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory); grok=home/".grok"; grok.mkdir(); target=home/"dedicated"/"credentials.json"; target.parent.mkdir(); target.write_text("sentinel")
+            (grok/"auth.json").symlink_to(target)
+            with mock.patch.dict(bridge.os.environ,{"HOME":str(home)},clear=True):
+                result=bridge.diagnostic_text(f"cannot open {grok/'auth.json'} resolved to {target}")
+            self.assertNotIn(str(home),result); self.assertEqual(result.count("[REDACTED]"),2)
+
+    def test_control_noise_cannot_reconstruct_a_token_after_redaction(self):
+        result=bridge.diagnostic_text("ghp_abc\x00defghijklmnopqrstuvwxyz")
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz",result); self.assertIn("[REDACTED]",result)
+
+    def test_missing_capability_names_exact_flag(self):
+        with self.assertRaises(bridge.ReviewBridgeError) as caught:
+            bridge.validate_cli_capabilities("claude",CLAUDE_HELP.replace("--strict-mcp-config","--not-strict-mcp-config"))
+        self.assertIn("--strict-mcp-config",str(caught.exception))
 
 
 if __name__ == "__main__":
