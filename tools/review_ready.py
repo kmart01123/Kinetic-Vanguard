@@ -157,25 +157,6 @@ def useful_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
     return redact_sensitive(selected)[:300]
 
 
-def doctor_failure_diagnostic(
-    completed: subprocess.CompletedProcess[str],
-) -> str:
-    diagnostic = "\n".join(
-        part for part in (completed.stderr, completed.stdout) if part.strip()
-    )
-    failure_lines = [
-        line.strip()
-        for line in diagnostic.splitlines()
-        if line.lstrip().startswith("FAIL")
-    ]
-    if failure_lines:
-        return redact_sensitive("\n".join(failure_lines))[:1200]
-    fallback = useful_diagnostic(completed)
-    if fallback.casefold().startswith("ok "):
-        return ""
-    return fallback
-
-
 def parse_json_object(raw: str, description: str) -> dict[str, object]:
     try:
         payload = json.loads(raw)

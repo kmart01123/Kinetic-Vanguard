@@ -63,14 +63,15 @@ NON_FINAL_REVIEW_PATTERNS = (
         r"^(?:(?:review|result|response|output) )?placeholder"
         r"(?: (?:review|result|response|output))?$"
     ),
-    # Keep the subject tied to this review, not an unfinished product feature.
+    # Require a review-status predicate, including after lead-ins such as Note:.
+    # An unfinished product feature is not itself an unfinished review.
     re.compile(
-        r"(?:\b(?:this|the|my|our) review|^review)"
+        r"\breview"
         r"(?: (?:is|remains))?(?: still)?"
         r" (?:unfinished|incomplete|not(?: yet)? (?:performed|completed|conducted|started))\b"
     ),
     re.compile(
-        r"(?:\b(?:this|the|my|our) review|^review)"
+        r"\breview"
         r" has not(?: yet)? been (?:performed|completed|conducted|started)\b"
     ),
     re.compile(
@@ -457,9 +458,12 @@ def resolve_provider_executable(
 
 
 def prompt_redactions(prompt: str) -> tuple[str, ...]:
-    # Bare diff markers (-, +, braces, etc.) are syntax, not meaningful prompt
-    # lines. Redacting them as substrings destroys CLI flags and diagnostics.
-    return tuple(value for value in (prompt, *prompt.splitlines()) if any(char.isalnum() for char in value))
+    # Short fragments and bare diff syntax collide with exit codes and CLI flags.
+    # This threshold applies only to inferred prompt text, never explicit secrets.
+    return tuple(
+        value for value in (prompt, *prompt.splitlines())
+        if len(value.strip()) >= 8 and any(char.isalnum() for char in value)
+    )
 
 
 def diagnostic_text(text: str, redactions: Sequence[str] = (), *, limit: int | None = 600) -> str:

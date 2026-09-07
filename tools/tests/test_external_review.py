@@ -978,6 +978,9 @@ class ReviewBridgeTests(unittest.TestCase):
             "I haven’t yet completed the review.",
             "We haven't yet conducted this review.",
             "This review hasn't yet been performed.",
+            "Note: review not yet performed due to tool access issues.",
+            "Status update: review has not yet been completed.",
+            "Inspection failed. Review remains incomplete.",
             'The guard rejects fixture "placeholder". This review is unfinished.',
             '"This review is unfinished."',
             '`Review not yet performed.`',
@@ -1014,6 +1017,8 @@ class ReviewBridgeTests(unittest.TestCase):
             "The guard rejects fixture ‘I haven’t completed the review. This review is unfinished.’ before posting.",
             "The guard rejects fixture 'I haven't completed the review. This review is unfinished.' before posting.",
             'The guard rejects example “Review not yet performed.” before posting.',
+            'The guard rejects fixture "Note: review not yet performed due to tool access issues." before posting.',
+            'The test payload `Status update: review has not yet been completed.` is rejected.',
             'The test payload `This review has not yet been performed.` is rejected.',
             'The fixture "Review bootstrap" correctly fails validation.',
             'The test input:\n```text\nThis review is unfinished.\n```\nis rejected before posting.',
@@ -2303,6 +2308,21 @@ class DiagnosticTests(unittest.TestCase):
         text = str(error)
         self.assertIn(message, text)
         for secret in ("private request line", "private second line", "opaque-secret-value"):
+            self.assertNotIn(secret, text)
+        self.assertIn("[REDACTED]", text)
+
+    def test_short_prompt_fragments_preserve_diagnostics_but_explicit_secrets_redact(self):
+        message = "provider failed (exit 1); version 1.0; --tools Read"
+        prompt = "Private review request\n 1\n+1\nRead\n1234567\n"
+        self.assertEqual(
+            bridge.diagnostic_text(message, bridge.prompt_redactions(prompt)), message
+        )
+        # The shortest included line, full prompt, and explicitly supplied short
+        # secrets remain redacted; only inferred short fragments are excluded.
+        redactions = (*bridge.prompt_redactions(prompt + "abcdefgh"), "pin7", "!!!")
+        text = bridge.diagnostic_text(message + " " + prompt + "abcdefgh pin7 !!!", redactions)
+        self.assertIn(message, text)
+        for secret in ("Private review request", "abcdefgh", "pin7", "!!!"):
             self.assertNotIn(secret, text)
         self.assertIn("[REDACTED]", text)
 
