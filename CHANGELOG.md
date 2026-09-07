@@ -4,6 +4,20 @@
 
 ### Changed
 
+- Corrected Grok review tool selection to native `read_file,grep` IDs while retaining scoped Read/Grep permission rules. Reject explicit CLI error or interrupted-completion metadata before accepting a review payload, and cover structured-final versus progress-text selection with offline regressions.
+
+- Closed the remaining PR #142 review findings: exclude short inferred prompt fragments from substring redaction while preserving explicit secret redaction, reject unfinished review statements after prose lead-ins while retaining quoted-fixture support, and remove the unused review-ready doctor diagnostic helper.
+
+- Fixed live CLI output truncation by capturing stdout/stderr in private temporary regular files rather than pipes; this restores the complete Claude capability surface. Excluded punctuation-only diff markers from prompt-line redaction so diagnostics preserve CLI flags and hyphenated terms while meaningful prompts and explicit secrets remain redacted.
+
+- Made external reviews independently collectible and explicitly resumable: each provider uses a separate clean checkout, validated results survive another provider's failure, and private checkpoints bind reuse to exact PR/prompt/bridge identity. Added collection-only runs, explicit INCOMPLETE outcomes, field-specific finality diagnostics, and posting receipts that prevent automatic duplication after an uncertain write. The CI gate now hands its exact approved SHA to the bridge, while per-adapter checks replace the redundant blanket doctor prerequisite. Required all-provider validation and live head/base revalidation still precede publication.
+
+- Hardened review finality checks for “not yet” and contracted negation while allowing explicitly introduced quoted test fixtures in completed reviews. Preserve diagnostic readability when wrapped prompts contain whitespace-only diff lines without weakening meaningful prompt or secret redaction.
+
+- Reject bare placeholder review fields and explicit unfinished or unperformed review statements, including the two failures observed during PR #143 review. Regressions cover both providers, all review fields, and atomic rejection without suppressing legitimate findings about incomplete product features.
+
+- Made external-review failures identify their component and stage, retain bounded redacted diagnostics, offer known authentication remediation, and report skipped providers plus posting state without changing exact-head validation, isolation, or pre-post all-provider atomicity. `doctor` now preserves safe command-failure reasons and names missing CLI flags.
+
 - Made the external-review bridge reject provider output that explicitly describes its own review as bootstrap, unfinished, or still in progress while preserving concise final results and substantive findings that discuss similar product concepts.
 - Completed the behavior-preserving rider-first representation migration for every machine-consumed ability: delivery and targeting topology are independent, all riders share one Manifested Strike rider slot, known selectors replace opaque topology, and canonical mechanics author concrete D&D damage/save facts. All 30 Calculator entries and 27 harness feature rules derive from those neutral per-entity primitives; benchmark scenario and scoring policy remain outside canonical rules mechanics.
 - Standardized the Phase Step family on fixed Strength saving throws, and made Improved Phase Step explicitly deal force damage at every tier regardless of Discipline.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -15,8 +16,13 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Callable, Iterator, Mapping, Protocol, Sequence
+
+try:
+    from tools.review_state import ReviewState, StateError
+except ModuleNotFoundError:  # Direct `python3 tools/external_review.py` entry point.
+    from review_state import ReviewState, StateError
 
 
 SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -36,9 +42,11 @@ GITHUB_SECRET_VARIABLES = (
     "GH_ENTERPRISE_TOKEN",
     "GITHUB_ENTERPRISE_TOKEN",
 )
-VERDICTS = frozenset(("PASS", "FINDINGS"))
+VERDICTS = frozenset(("PASS", "FINDINGS", "INCOMPLETE"))
 FINDING_SEVERITIES = frozenset(("BLOCKER", "HIGH", "MEDIUM", "LOW"))
 GROK_SANDBOX_PROFILE = "kv-external-review"
+# --tools selects native tool IDs; Read/Grep are permission-rule prefixes.
+GROK_REVIEW_TOOLS = ("read_file", "grep")
 GROK_SANDBOX_FAILURE_PATTERN = re.compile(
     r"(?:sandbox could not be applied|failed to apply sandbox|unknown sandbox profile)",
     re.IGNORECASE,
@@ -52,6 +60,26 @@ NON_FINAL_REVIEW_TITLES = frozenset(
     )
 )
 NON_FINAL_REVIEW_PATTERNS = (
+    # Bare placeholder fields are not completed review evidence.
+    re.compile(
+        r"^(?:(?:review|result|response|output) )?placeholder"
+        r"(?: (?:review|result|response|output))?$"
+    ),
+    # Require a review-status predicate, including after lead-ins such as Note:.
+    # An unfinished product feature is not itself an unfinished review.
+    re.compile(
+        r"\breview"
+        r"(?: (?:is|remains))?(?: still)?"
+        r" (?:unfinished|incomplete|not(?: yet)? (?:performed|completed|conducted|started))\b"
+    ),
+    re.compile(
+        r"\breview"
+        r" has not(?: yet)? been (?:performed|completed|conducted|started)\b"
+    ),
+    re.compile(
+        r"\b(?:i|we)(?: have)? not(?: yet)? (?:performed|completed|conducted|started)"
+        r" (?:this|the|my|our) review\b"
+    ),
     re.compile(r"\b(?:the )?review(?: request)? is being processed\b"),
     re.compile(
         r"\breview(?: (?:is|remains))?"
@@ -158,6 +186,48 @@ class ReviewBridgeError(RuntimeError):
     """A fail-closed bridge error suitable for a concise CLI diagnostic."""
 
 
+@dataclass(frozen=True)
+class FailureDiagnostic:
+    component: str
+    stage: str
+    detail: str
+    exit_code: int | None = None
+    remediation: str = ""
+
+    def render(self) -> str:
+        code = f" (exit {self.exit_code})" if self.exit_code is not None else ""
+        remedy = f"; {self.remediation}" if self.remediation else ""
+        return f"{self.component} {self.stage} failed{code}: {diagnostic_text(self.detail)}{remedy}"
+
+
+class DiagnosticError(ReviewBridgeError):
+    def __init__(self, diagnostic: FailureDiagnostic) -> None:
+        self.diagnostic = diagnostic
+        super().__init__(diagnostic.render())
+
+
+@dataclass
+class FailureContext:
+    component: str
+    stage: str
+    redactions: tuple[str, ...] = ()
+    posting_started: bool = False
+    posted_count: int = 0
+
+    def error(self, error: ReviewBridgeError) -> DiagnosticError:
+        prior = error.diagnostic if isinstance(error, DiagnosticError) else None
+        detail = diagnostic_text(prior.detail if prior else str(error), self.redactions)
+        return DiagnosticError(FailureDiagnostic(
+            self.component, self.stage, detail,
+            prior.exit_code if prior else None,
+            prior.remediation if prior else "",
+        ))
+
+
+class ReviewAttemptError(ReviewBridgeError):
+    """A diagnostic already containing exact attempt and posting state."""
+
+
 class Runner(Protocol):
     def run(
         self,
@@ -181,16 +251,18 @@ class SubprocessRunner:
         timeout: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
         try:
-            return subprocess.run(
-                list(args),
-                cwd=cwd,
-                env=dict(env) if env is not None else None,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
+            # Some CLIs exit before flushing pipe-backed stdout (observed with
+            # Claude --help at ~8 KiB). Private regular files avoid that truncation.
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stdout, \
+                 tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stderr:
+                completed = subprocess.run(
+                    list(args), cwd=cwd, env=dict(env) if env is not None else None,
+                    input=input_text, text=True, stdout=stdout, stderr=stderr,
+                    timeout=timeout, check=False,
+                )
+                stdout.seek(0)
+                stderr.seek(0)
+                return subprocess.CompletedProcess(completed.args, completed.returncode, stdout.read(), stderr.read())
         except FileNotFoundError as error:
             raise ReviewBridgeError(f"required command is unavailable: {args[0]}") from error
         except subprocess.TimeoutExpired as error:
@@ -330,7 +402,7 @@ def validate_cli_capabilities(provider_key: str, help_output: str) -> None:
         ) is not None
 
     missing = [
-        label
+        f"{label} ({'/'.join(spellings)})"
         for label, spellings in REQUIRED_CLI_CAPABILITIES[provider_key]
         if not any(has_exact_option(spelling) for spelling in spellings)
     ]
@@ -387,23 +459,63 @@ def resolve_provider_executable(
     return resolved, safe_path
 
 
+def prompt_redactions(prompt: str) -> tuple[str, ...]:
+    # Short fragments and bare diff syntax collide with exit codes and CLI flags.
+    # This threshold applies only to inferred prompt text, never explicit secrets.
+    return tuple(
+        value for value in (prompt, *prompt.splitlines())
+        if len(value.strip()) >= 8 and any(char.isalnum() for char in value)
+    )
+
+
+def diagnostic_text(text: str, redactions: Sequence[str] = (), *, limit: int | None = 600) -> str:
+    # Normalize control noise before redaction, and redact before bounding.
+    text = ANSI_PATTERN.sub("", text)
+    text = "".join(char for char in text if char in "\n\t" or not unicodedata.category(char).startswith("C"))
+    source = os.environ
+    home = Path(source.get("HOME", str(Path.home()))).expanduser()
+    grok_home = Path(source.get("GROK_HOME", str(home / ".grok"))).expanduser()
+    auth = Path(source.get("GROK_AUTH_PATH", str(grok_home / "auth.json"))).expanduser()
+    try:
+        resolved_auth = str(auth.resolve(strict=False))
+    except (OSError, RuntimeError):
+        resolved_auth = str(auth)
+    values = (*redactions, str(auth), resolved_auth)
+    for value in sorted(set(values), key=len, reverse=True):
+        if value.strip():
+            text = text.replace(value, "[REDACTED]")
+    text = redact_sensitive(text)
+    return " ".join(text.split())[:limit] or "no diagnostic emitted"
+
+
 def safe_failure_detail(completed: subprocess.CompletedProcess[str]) -> str:
-    lines = [
-        line.strip()
-        for line in redact_sensitive(completed.stderr).splitlines()
-        if line.strip()
-    ]
-    return f": {lines[-1][:300]}" if lines else ""
+    if completed.stderr.strip():
+        return f": {diagnostic_text(completed.stderr, limit=None)}"
+    # stdout may contain a prompt or review, so expose only a known error message field.
+    if completed.stdout.strip():
+        if re.search(r"not (?:signed in|authenticated|logged in)|no auth credentials", completed.stdout, re.I):
+            return ": provider reports missing authentication"
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            message = error.get("message") if isinstance(error, dict) else error
+            if isinstance(message, str):
+                return f": {diagnostic_text(message, limit=None)}"
+        return ": no stderr diagnostic; stdout omitted because it may contain review or prompt content"
+    return ": no diagnostic emitted"
 
 
 def require_success(
     completed: subprocess.CompletedProcess[str], description: str
 ) -> subprocess.CompletedProcess[str]:
     if completed.returncode != 0:
-        raise ReviewBridgeError(
-            f"{description} failed with exit code {completed.returncode}"
-            f"{safe_failure_detail(completed)}"
-        )
+        raise DiagnosticError(FailureDiagnostic(
+            "Bridge", description, safe_failure_detail(completed).removeprefix(": "),
+            completed.returncode,
+        ))
     return completed
 
 
@@ -855,8 +967,37 @@ def select_model_usage(model_usage: object, provider_name: str) -> str | None:
     return normalize_metadata_value(selected)
 
 
+def validate_provider_completion(outer: Mapping[str, object], provider_name: str) -> None:
+    """Reject CLI-reported interruption/errors before considering model prose.
+
+    Legacy flat contracts and envelopes with absent/null stop metadata remain
+    supported, but explicit failure metadata always overrides a usable payload.
+    Never interpolate arbitrary envelope strings: they may echo private input.
+    """
+    for field in ("error", "structured_output_error", "structuredOutputError"):
+        if field in outer and outer[field] is not None:
+            raise ReviewBridgeError(f"{provider_name} CLI reported {field}; review was not completed")
+    if "is_error" in outer and outer["is_error"] is not False:
+        raise ReviewBridgeError(f"{provider_name} CLI reported an error or malformed is_error status")
+    if outer.get("type") == "error":
+        raise ReviewBridgeError(f"{provider_name} CLI returned an error result")
+    if "subtype" in outer and outer["subtype"] != "success":
+        raise ReviewBridgeError(f"{provider_name} CLI returned a non-success result subtype")
+    for field in ("stopReason", "stop_reason"):
+        if outer.get(field) is not None and outer[field] != "end_turn":
+            reason = outer[field]
+            # Only known protocol enums are safe, useful diagnostic details.
+            known = {"max_tokens", "max_turn_requests", "refusal", "cancelled", "tool_use", "pause_turn", "stop_sequence"}
+            detail = reason if isinstance(reason, str) and reason in known else "unrecognized"
+            raise ReviewBridgeError(
+                f"{provider_name} CLI did not finish the review ({field}: {detail}); "
+                "partial output was rejected"
+            )
+
+
 def extract_contract(output: str, provider_name: str) -> tuple[dict[str, object], str | None]:
     outer = parse_json_object(output, f"{provider_name} provider")
+    validate_provider_completion(outer, provider_name)
     required = {"pr_number", "head_sha", "verdict", "body_markdown", "findings"}
     if required.issubset(outer):
         contract = dict(outer)
@@ -949,8 +1090,8 @@ def review_result_from_contract(contract: Mapping[str, object]) -> ReviewResult:
                 detail=detail.strip(),
             )
         )
-    if verdict == "PASS" and findings:
-        raise ReviewBridgeError("PASS provider review output contained findings")
+    if verdict in {"PASS", "INCOMPLETE"} and findings:
+        raise ReviewBridgeError(f"{verdict} provider review output contained findings")
     if verdict == "FINDINGS" and not findings:
         raise ReviewBridgeError("FINDINGS provider review output contained no findings")
     optional: dict[str, str | None] = {}
@@ -984,6 +1125,18 @@ class ProviderAdapter:
         self.source_environment = source_environment
 
     def run(self, worktree: Path, prompt: str) -> ProviderExecution:
+        source = self.source_environment if self.source_environment is not None else os.environ
+        sensitive = tuple(value for key, value in source.items() if re.search(r"token|secret|password|api.?key|auth.?path", key, re.I))
+        context = FailureContext(self.spec.display_name, "executable lookup", (*prompt_redactions(prompt), *sensitive))
+        try:
+            return self._run(worktree, prompt, context)
+        except ReviewBridgeError as error:
+            raise context.error(error) from error
+        except OSError as error:
+            safe = ReviewBridgeError(error.strerror or type(error).__name__)
+            raise context.error(safe) from error
+
+    def _run(self, worktree: Path, prompt: str, context: FailureContext) -> ProviderExecution:
         source = (
             self.source_environment
             if self.source_environment is not None
@@ -992,6 +1145,7 @@ class ProviderAdapter:
         executable, safe_path = resolve_provider_executable(
             self.spec, source, review_worktree=worktree
         )
+        context.stage = "temporary isolation setup"
         try:
             temporary = tempfile.TemporaryDirectory(
                 prefix=f"kv-{self.spec.key}-review-"
@@ -1018,6 +1172,7 @@ class ProviderAdapter:
                 child_env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
             elif self.spec.key == "grok":
                 auth_file = resolve_grok_auth_file(source)
+                context.redactions += (str(auth_file),)
                 auth_directory = validate_grok_auth_directory(
                     auth_file, source, worktree
                 )
@@ -1033,6 +1188,7 @@ class ProviderAdapter:
                 if self.spec.key == "grok"
                 else (str(executable), "--version")
             )
+            context.stage = "version lookup"
             version = require_success(
                 self.runner.run(
                     version_command,
@@ -1043,6 +1199,7 @@ class ProviderAdapter:
                 f"{self.spec.display_name} version lookup",
             )
             cli_version = first_output_line(version.stdout or version.stderr, "unknown")
+            context.stage = "capability lookup"
             help_result = require_success(
                 self.runner.run(
                     (str(executable), "--help"),
@@ -1063,6 +1220,7 @@ class ProviderAdapter:
                 command = self._claude_command(
                     executable, worktree, claude_isolation
                 )
+                context.stage = "review invocation"
                 completed = self.runner.run(
                     command,
                     cwd=worktree,
@@ -1073,6 +1231,7 @@ class ProviderAdapter:
             else:
                 if grok_sandbox is None:
                     raise ReviewBridgeError("Grok sandbox profile was not initialized")
+                context.stage = "sandbox configuration inspection"
                 self._validate_grok_configuration(
                     executable,
                     worktree,
@@ -1092,27 +1251,34 @@ class ProviderAdapter:
                     prompt_file,
                     grok_sandbox,
                 )
+                context.stage = "review invocation"
                 completed = self.runner.run(
                     command,
                     cwd=worktree,
                     env=child_env,
                     timeout=3600,
                 )
+                context.stage = "sandbox enforcement"
                 require_grok_sandbox_applied(completed, "Grok review")
+            context.stage = "review invocation"
             if completed.returncode != 0:
-                raise ReviewBridgeError(
-                    f"{self.spec.display_name} provider failed with exit code "
-                    f"{completed.returncode}{safe_failure_detail(completed)}"
-                )
+                detail = safe_failure_detail(completed).removeprefix(": ")
+                remedy = ""
+                if re.search(r"not (?:signed in|authenticated|logged in)|no auth credentials|unauthorized", completed.stderr + completed.stdout, re.I):
+                    remedy = "run claude auth login" if self.spec.key == "claude" else "run grok login --device-auth"
+                raise DiagnosticError(FailureDiagnostic(self.spec.display_name, context.stage, detail, completed.returncode, remedy))
+            context.stage = "structured-output parsing"
             contract, model_metadata = extract_contract(
                 completed.stdout, self.spec.display_name
             )
+            context.stage = "review-contract validation"
             result = review_result_from_contract(contract)
             if grok_sandbox is not None:
                 auth_path = grok_sandbox.auth_file.as_posix()
                 result = redact_review_result_value(result, auth_path)
                 if model_metadata is not None:
                     model_metadata = model_metadata.replace(auth_path, "[REDACTED]")
+            context.stage = "temporary cleanup"
             return ProviderExecution(
                 result=result,
                 cli_version=cli_version,
@@ -1223,7 +1389,7 @@ class ProviderAdapter:
             "--permission-mode",
             "dontAsk",
             "--tools",
-            "Read,Grep",
+            ",".join(GROK_REVIEW_TOOLS),
             "--sandbox",
             sandbox.name,
             "--no-subagents",
@@ -1480,6 +1646,27 @@ def validate_and_strip_body_claims(
     return stripped
 
 
+# Only explicitly introduced example payloads are excluded from self-status checks.
+# Quotation alone does not establish that an unfinished statement is an example.
+REVIEW_EXAMPLE = re.compile(
+    r"\b(?:fixture|example|test (?:case|payload|input)|sample (?:payload|input)|literal)"
+    r"(?:\s+(?:text|value|payload))?\s*:?\s*"
+    r'(?:"[^"\n]*"|“[^”\n]*”|‘(?:[^’\n]|(?<=\w)’(?=\w))*’|'
+    r"'(?:[^'\n]|(?<=\w)'(?=\w))*'|(?P<ticks>`+)(?:(?!(?P=ticks))[\s\S])*(?P=ticks))",
+    re.IGNORECASE,
+)
+
+
+def normalized_finality_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    # Leave surrounding prose intact so a real self-status claim still rejects.
+    text = REVIEW_EXAMPLE.sub("quoted example payload", text).casefold()
+    text = re.sub(
+        r"\b(have|has|had)n['’]t\b", lambda match: match.group(1) + " not", text
+    )
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
 def validate_execution(
     execution: ProviderExecution,
     provider: ProviderSpec,
@@ -1503,34 +1690,28 @@ def validate_execution(
         raise ReviewBridgeError(
             f"{provider.display_name} returned FINDINGS without structured findings"
         )
-    normalized_titles = [
-        re.sub(
-            r"[^a-z0-9]+",
-            " ",
-            unicodedata.normalize("NFKC", finding.title).casefold(),
-        ).strip()
-        for finding in result.findings
-    ]
-    finality_texts = (
-        result.body_markdown,
-        *(finding.title for finding in result.findings),
-        *(finding.detail for finding in result.findings),
-    )
-    normalized_review_texts = [
-        re.sub(
-            r"[^a-z0-9]+",
-            " ",
-            unicodedata.normalize("NFKC", text).casefold(),
-        ).strip()
-        for text in finality_texts
-    ]
-    if NON_FINAL_REVIEW_TITLES.intersection(normalized_titles) or any(
-        pattern.search(text)
-        for text in normalized_review_texts
-        for pattern in NON_FINAL_REVIEW_PATTERNS
-    ):
+    if result.verdict == "INCOMPLETE":
         raise ReviewBridgeError(
-            f"{provider.display_name} returned non-final review output"
+            f"{provider.display_name} returned INCOMPLETE; review could not be completed; "
+            f"reason: {diagnostic_text(result.body_markdown, limit=240)}; use --resume after addressing the cause"
+        )
+    finality_fields = [("body_markdown", result.body_markdown)]
+    for index, finding in enumerate(result.findings):
+        finality_fields.extend(((f"findings[{index}].title", finding.title),
+                                (f"findings[{index}].detail", finding.detail)))
+    for location, value in finality_fields:
+        normalized = normalized_finality_text(value)
+        if normalized in NON_FINAL_REVIEW_TITLES:
+            reason = "standalone progress status"
+        else:
+            match = next((pattern.search(normalized) for pattern in NON_FINAL_REVIEW_PATTERNS
+                          if pattern.search(normalized)), None)
+            if match is None:
+                continue
+            reason = "placeholder field" if "placeholder" in match.group() else "unfinished self-status claim"
+        raise ReviewBridgeError(
+            f"{provider.display_name} returned non-final review output in {location}: {reason}; "
+            "return a completed review or verdict INCOMPLETE"
         )
     if result.provider_claim:
         validate_identity_claim(result.provider_claim, provider.key, "provider")
@@ -1610,7 +1791,7 @@ Apply the following provider-neutral review request:
 {prompt.strip()}
 </review-request>
 
-Return only the requested machine-readable result. `pr_number` must be {metadata.number}; `head_sha` must be {metadata.head_sha}; `verdict` must be exactly PASS or FINDINGS; `body_markdown` must contain only the substantive review; `findings` must be an array of objects with `severity`, `title`, and `detail`. Use only BLOCKER, HIGH, MEDIUM, or LOW for `severity`. PASS requires an empty `findings` array. FINDINGS requires at least one substantive structured finding. Do not infer or manufacture structured findings from prose. Do not emit provider, reviewer, exact-head, verdict, or review-role headers in `body_markdown`. Provider identity is caller-owned metadata and must not be claimed or inferred in model prose.
+Return only the requested machine-readable result. `pr_number` must be {metadata.number}; `head_sha` must be {metadata.head_sha}; `verdict` must be exactly PASS, FINDINGS, or INCOMPLETE; `body_markdown` must contain only the substantive review; `findings` must be an array of objects with `severity`, `title`, and `detail`. Use only BLOCKER, HIGH, MEDIUM, or LOW for `severity`. PASS requires an empty `findings` array. FINDINGS requires at least one substantive structured finding. If inspection cannot be completed, return INCOMPLETE with an empty findings array and a concise explanation in body_markdown; never label a progress report PASS or FINDINGS. Refer to quoted test payloads explicitly as fixtures or examples. Do not infer or manufacture structured findings from prose. Do not emit provider, reviewer, exact-head, verdict, or review-role headers in `body_markdown`. Provider identity is caller-owned metadata and must not be claimed or inferred in model prose.
 """
 
 
@@ -1677,6 +1858,35 @@ class GitHub(Protocol):
     def post_comment(self, repository: str, pr_number: int, body: str) -> tuple[int, str]: ...
 
 
+def checkpoint_execution(execution: ProviderExecution) -> dict:
+    return json.loads(json.dumps(asdict(execution)))
+
+
+def restore_execution(payload: object) -> ProviderExecution:
+    try:
+        if not isinstance(payload, dict) or set(payload) != {"result", "cli_version", "model_metadata"}:
+            raise ValueError("invalid execution fields")
+        contract = dict(payload["result"])
+        for source, target in (("provider_claim", "provider"), ("reviewer_claim", "reviewer"), ("model_claim", "model")):
+            claim = contract.pop(source)
+            if claim is not None:
+                contract[target] = claim
+        result = review_result_from_contract(contract)
+        version, model = payload["cli_version"], payload["model_metadata"]
+        if not isinstance(version, str) or not version.strip() or (model is not None and not isinstance(model, str)):
+            raise ValueError("invalid provider metadata")
+        return ProviderExecution(result, version, model)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ReviewBridgeError("malformed retained execution; start a fresh review") from error
+
+
+def review_identity(repository: str, metadata: PRMetadata, prompt: str, providers: Sequence[str]) -> dict:
+    code = Path(__file__).read_bytes() + Path(__file__).with_name("review_state.py").read_bytes()
+    return {"repository": repository, "pr": asdict(metadata), "providers": list(providers),
+            "wrapped_prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "bridge_sha256": hashlib.sha256(code).hexdigest()}
+
+
 class ReviewBridge:
     def __init__(
         self,
@@ -1692,9 +1902,26 @@ class ReviewBridge:
         self.emit = emit
 
     def review(
-        self, pr_number: int, provider_names: Sequence[str], prompt: str
+        self, pr_number: int, provider_names: Sequence[str], prompt: str, *,
+        state_dir: Path | None = None, resume: Path | None = None, collect_only: bool = False,
+        expected_head: str | None = None
+    ) -> list[PostedComment]:
+        context = FailureContext("Bridge", "repository context", prompt_redactions(prompt))
+        try:
+            return self._review(pr_number, provider_names, prompt, context, state_dir, resume, collect_only, expected_head)
+        except ReviewAttemptError:
+            raise
+        except (ReviewBridgeError, StateError, OSError) as error:
+            state = "posted reviews: none" if not context.posting_started else f"posting attempted; outcome may be uncertain ({context.posted_count} confirmed comments)"
+            safe_error = error if isinstance(error, ReviewBridgeError) else ReviewBridgeError(str(error))
+            raise ReviewAttemptError(f"{context.error(safe_error)}; {state}") from error
+
+    def _review(
+        self, pr_number: int, provider_names: Sequence[str], prompt: str, context: FailureContext,
+        state_dir: Path | None, resume: Path | None, collect_only: bool, expected_head: str | None
     ) -> list[PostedComment]:
         repository_name = self.github.repository()
+        context.stage = "initial PR identity validation"
         metadata = self.github.pr_metadata(repository_name, pr_number)
         if metadata.number != pr_number:
             raise ReviewBridgeError("GitHub returned a different PR number")
@@ -1702,55 +1929,129 @@ class ReviewBridge:
             raise ReviewBridgeError(
                 f"PR #{pr_number} is {metadata.state}; only open PRs are supported"
             )
+        if expected_head is not None and (not SHA_PATTERN.fullmatch(expected_head) or metadata.head_sha.lower() != expected_head.lower()):
+            raise ReviewBridgeError("PR head no longer matches the CI-validated expected head; rerun review:ready")
         self.emit(f"Exact head: {metadata.head_sha}")
+        context.stage = "commit lookup"
         self.repository.ensure_commit(metadata.base_sha)
         self.repository.ensure_commit(metadata.head_sha, pr_number=pr_number)
+        context.stage = "diff construction"
         base_to_head_diff = self.repository.base_to_head_diff(
             metadata.base_sha, metadata.head_sha
         )
         prompt_text = wrapped_prompt(prompt, metadata, base_to_head_diff)
+        if not provider_names or len(set(provider_names)) != len(provider_names) or any(name not in self.adapters for name in provider_names):
+            raise ReviewBridgeError("select each requested provider exactly once")
+        if resume is not None and state_dir is None:
+            raise ReviewBridgeError("resume requires a private review state directory")
+        context.stage = "review checkpoint"
+        manager = (ReviewState.open(state_dir, review_identity(repository_name, metadata, prompt_text, provider_names), resume)
+                   if state_dir is not None else contextlib.nullcontext(None))
+        with manager as state:
+            if state is not None:
+                self.emit(f"Review checkpoint: {state.path}")
+            try:
+                return self._collect_and_post(repository_name, metadata, provider_names, prompt_text, context, state, collect_only)
+            except (ReviewBridgeError, StateError, OSError) as error:
+                if state is not None:
+                    self.emit(f"Resume with the same PR, providers and prompt: --resume {state.path}")
+                raise
+
+    def _collect_and_post(
+        self, repository_name: str, metadata: PRMetadata, provider_names: Sequence[str],
+        prompt_text: str, context: FailureContext, state: ReviewState | None, collect_only: bool,
+    ) -> list[PostedComment]:
         validated: list[tuple[ProviderSpec, ProviderExecution]] = []
-        with self.repository.detached_worktree(pr_number, metadata.head_sha) as worktree:
-            self.repository.validate_worktree_symlinks(worktree)
-            for provider_name in provider_names:
-                spec = PROVIDER_SPECS[provider_name]
-                adapter = self.adapters[provider_name]
-                self.emit(f"{spec.display_name}: started")
-                execution = validate_execution(
-                    adapter.run(worktree, prompt_text),
-                    spec,
-                    pr_number,
-                    metadata.head_sha,
-                )
-                self.repository.assert_clean(worktree, spec.display_name)
-                self.emit(
-                    f"{spec.display_name}: completed ({execution.result.verdict})"
-                )
+        failures: list[str] = []
+        receipts: dict[str, PostedComment] = {}
+        if state is not None and set(state.data["providers"]) - set(provider_names):
+            raise ReviewBridgeError("checkpoint contains an unexpected provider; start a fresh review")
+        for provider_name in provider_names:
+            spec = PROVIDER_SPECS[provider_name]
+            retained = state.data["providers"].get(provider_name, {}) if state is not None else {}
+            if not isinstance(retained, dict):
+                raise ReviewBridgeError("malformed provider checkpoint; start a fresh review")
+            status = retained.get("status")
+            if status not in {None, "running", "failed", "validated", "posting", "posted"}:
+                raise ReviewBridgeError("malformed provider checkpoint status; start a fresh review")
+            if status == "posting":
+                context.posting_started = True
+                raise ReviewBridgeError(f"{spec.display_name} posting outcome is uncertain; inspect GitHub before starting another review; automatic reposting is blocked")
+            if status in {"validated", "posted"}:
+                execution = validate_execution(restore_execution(retained.get("execution")), spec, metadata.number, metadata.head_sha)
+                if status == "posted":
+                    receipt = retained.get("receipt", {})
+                    if (not isinstance(receipt, dict) or not isinstance(receipt.get("comment_id"), int)
+                            or isinstance(receipt.get("comment_id"), bool) or receipt["comment_id"] <= 0
+                            or not isinstance(receipt.get("url"), str) or not receipt["url"].startswith("https://")):
+                        raise ReviewBridgeError("malformed posting receipt; inspect GitHub before retrying")
+                    receipts[provider_name] = PostedComment(provider_name, receipt["comment_id"], receipt["url"])
+                    context.posted_count += 1
+                    context.posting_started = True
+                self.emit(f"{spec.display_name}: retained validated result ({execution.result.verdict})")
                 validated.append((spec, execution))
-
-        live = self.github.pr_metadata(repository_name, pr_number)
-        if live.state.upper() != "OPEN":
-            raise ReviewBridgeError(
-                f"PR #{pr_number} is no longer open; posting was blocked"
-            )
-        if live.head_sha.lower() != metadata.head_sha.lower():
-            raise ReviewBridgeError(
-                f"PR #{pr_number} head moved from {metadata.head_sha} to {live.head_sha}; "
-                "stale review was not posted"
-            )
-        self.emit(f"Head revalidated: {metadata.head_sha}")
-
+                continue
+            stage = "detached-worktree setup"
+            if state is not None:
+                state.record(provider_name, "running")
+            self.emit(f"{spec.display_name}: started")
+            try:
+                # Each provider gets a fresh checkout, including after another failed.
+                with self.repository.detached_worktree(metadata.number, metadata.head_sha) as worktree:
+                    stage = "symlink validation"
+                    self.repository.validate_worktree_symlinks(worktree)
+                    if state is not None and state.path.resolve().is_relative_to(worktree.resolve()):
+                        raise ReviewBridgeError("review checkpoint must be outside the provider checkout")
+                    stage = "review invocation"
+                    raw_execution = self.adapters[provider_name].run(worktree, prompt_text)
+                    stage = "review-contract validation"
+                    execution = validate_execution(raw_execution, spec, metadata.number, metadata.head_sha)
+                    stage = "dirty-worktree validation"
+                    self.repository.assert_clean(worktree, spec.display_name)
+                    stage = "detached-worktree cleanup"
+            except ReviewBridgeError as error:
+                failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, prompt_redactions(prompt_text)).error(error)
+                detail = str(failure)
+                failures.append(detail)
+                self.emit(detail)
+                if state is not None:
+                    state.record(provider_name, "failed", diagnostic=detail)
+                continue
+            if state is not None:
+                state.record(provider_name, "validated", execution=checkpoint_execution(execution))
+            validated.append((spec, execution))
+            self.emit(f"{spec.display_name}: completed ({execution.result.verdict})")
+        if failures:
+            states = "; ".join(f"{spec.display_name}: validated and retained" if state is not None else f"{spec.display_name}: validated" for spec, _ in validated)
+            posting_state = f"no new reviews posted; {len(receipts)} previously posted comments" if receipts else "posted reviews: none"
+            raise ReviewAttemptError("; ".join(part for part in [*failures, states, posting_state] if part))
+        context.stage = "exact-head revalidation"
+        live = self.github.pr_metadata(repository_name, metadata.number)
+        if (live.number != metadata.number or live.state.upper() != "OPEN"
+                or live.head_sha.lower() != metadata.head_sha.lower()
+                or live.base_sha.lower() != metadata.base_sha.lower()
+                or live.base_ref != metadata.base_ref or live.head_ref != metadata.head_ref):
+            raise ReviewBridgeError("PR head moved, base changed, or PR is no longer open; stale review was not posted")
+        self.emit(f"Head and base revalidated: {metadata.head_sha}")
+        if collect_only:
+            self.emit("All requested reviews validated; collection only, no reviews posted.")
+            return []
         posted: list[PostedComment] = []
         for spec, execution in validated:
-            comment_id, url = self.github.post_comment(
-                repository_name,
-                pr_number,
-                render_comment(spec, metadata, execution),
-            )
+            if spec.key in receipts:
+                posted.append(receipts[spec.key])
+                self.emit(f"{spec.display_name}: already posted {receipts[spec.key].url}")
+                continue
+            context.stage = f"{spec.display_name} GitHub posting"
+            if state is not None:
+                state.record(spec.key, "posting", execution=checkpoint_execution(execution))
+            context.posting_started = True
+            comment_id, url = self.github.post_comment(repository_name, metadata.number, render_comment(spec, metadata, execution))
+            context.posted_count += 1
+            if state is not None:
+                state.record(spec.key, "posted", execution=checkpoint_execution(execution), receipt={"comment_id": comment_id, "url": url})
             self.emit(f"{spec.display_name}: posted {url}")
-            posted.append(
-                PostedComment(provider=spec.key, comment_id=comment_id, url=url)
-            )
+            posted.append(PostedComment(spec.key, comment_id, url))
         return posted
 
 
@@ -1765,8 +2066,8 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     ) -> subprocess.CompletedProcess[str]:
         try:
             return runner.run(args, cwd=cwd, env=env, timeout=30)
-        except ReviewBridgeError:
-            return subprocess.CompletedProcess(tuple(args), 127, "", "")
+        except ReviewBridgeError as error:
+            return subprocess.CompletedProcess(tuple(args), 127, "", diagnostic_text(str(error)))
 
     def version_check(
         command: str,
@@ -1777,7 +2078,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
         nonlocal healthy
         completed = safe_run((command, "--version"), env=env)
         if completed.returncode != 0:
-            lines.append(f"FAIL {label}: unavailable")
+            lines.append(f"FAIL {label} version lookup (exit {completed.returncode}){safe_failure_detail(completed)}")
             healthy = False
             return False
         lines.append(
@@ -1796,7 +2097,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
             return False
         completed = safe_run((str(executable), "--help"), env=env)
         if completed.returncode != 0:
-            lines.append(f"FAIL {display_name} safety capabilities: help unavailable")
+            lines.append(f"FAIL {display_name} safety capabilities: help lookup (exit {completed.returncode}){safe_failure_detail(completed)}")
             healthy = False
             return False
         try:
@@ -1820,7 +2121,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     if gh_available and gh_auth.returncode == 0:
         lines.append("OK   GitHub authentication: authenticated")
     else:
-        lines.append("FAIL GitHub authentication: run `gh auth login`")
+        lines.append(f"FAIL GitHub authentication{safe_failure_detail(gh_auth)}; run `gh auth login`")
         healthy = False
 
     repo = (
@@ -1848,7 +2149,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
             f"OK   repository context: {repo.stdout.strip()} ({repository_name})"
         )
     else:
-        lines.append("FAIL repository context: run inside a GitHub repository")
+        lines.append(f"FAIL repository context{safe_failure_detail(repo if repo.returncode else gh_repo)}; run inside a GitHub repository")
         healthy = False
 
     provider_source = os.environ
@@ -1885,10 +2186,10 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
         if isinstance(status, dict) and status.get("loggedIn") is True:
             lines.append("OK   Claude authentication: authenticated")
         else:
-            lines.append("FAIL Claude authentication: run `claude auth login`")
+            lines.append(f"FAIL Claude authentication{safe_failure_detail(claude_auth)}; run `claude auth login`")
             healthy = False
     else:
-        lines.append("FAIL Claude authentication: run `claude auth login`")
+        lines.append(f"FAIL Claude authentication{safe_failure_detail(claude_auth)}; run `claude auth login`")
         healthy = False
 
     try:
@@ -1921,7 +2222,7 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     if grok_available and grok_session_controls.returncode == 0:
         lines.append("OK   Grok session controls: compatible")
     else:
-        lines.append("FAIL Grok session controls: `--no-auto-update --no-memory` unsupported")
+        lines.append(f"FAIL Grok session controls: `--no-auto-update --no-memory` unsupported{safe_failure_detail(grok_session_controls)}")
         healthy = False
     capability_check("grok", grok_executable if grok_available else None, grok_env)
     grok_auth = (
@@ -1933,18 +2234,19 @@ def doctor(runner: Runner, cwd: Path) -> tuple[bool, list[str]]:
     grok_auth_failed = (
         not grok_available
         or grok_auth.returncode != 0
+        or "not signed in" in grok_probe.lower()
         or "not authenticated" in grok_probe.lower()
         or "no auth credentials" in grok_probe.lower()
         or "failed to fetch models" in grok_probe.lower()
         or "auth(" in grok_probe.lower()
     )
     if grok_auth_failed:
-        lines.append("FAIL Grok authentication: run `grok login --device-auth`")
+        lines.append(f"FAIL Grok authentication/model access{safe_failure_detail(grok_auth)}; run `grok login --device-auth`")
         healthy = False
     else:
         lines.append("OK   Grok authentication: authenticated model access")
 
-    return healthy, [redact_sensitive(line) for line in lines]
+    return healthy, [("OK   " + diagnostic_text(line[5:])) if line.startswith("OK   ") else diagnostic_text(line) for line in lines]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1961,6 +2263,10 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument(
         "--prompt-file", type=Path, required=True, help="provider-neutral review request"
     )
+    review.add_argument("--state-dir", type=Path, default=Path(".cache/external-reviews"), help="private local checkpoint directory")
+    review.add_argument("--resume", type=Path, help="resume a matching checkpoint; run only providers without a validated result")
+    review.add_argument("--expected-head", help="require this exact PR head, supplied by review:ready after CI")
+    review.add_argument("--collect-only", action="store_true", help="validate and retain reviews without posting to GitHub")
     return parser
 
 
@@ -1989,7 +2295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             key: ProviderAdapter(spec, runner) for key, spec in PROVIDER_SPECS.items()
         }
         providers = ("claude", "grok") if args.provider == "all" else (args.provider,)
-        ReviewBridge(github, repository, adapters).review(args.pr, providers, prompt)
+        ReviewBridge(github, repository, adapters).review(args.pr, providers, prompt, state_dir=args.state_dir, resume=args.resume, collect_only=args.collect_only, expected_head=args.expected_head)
         return 0
     except ReviewBridgeError as error:
         print(f"error: {redact_sensitive(str(error))}", file=sys.stderr)

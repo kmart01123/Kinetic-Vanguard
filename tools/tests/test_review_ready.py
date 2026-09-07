@@ -251,6 +251,7 @@ class ReviewReadyTests(unittest.TestCase):
         wait_timeout: float = 100.0,
         startup_grace: float = 30.0,
         progress_interval: float = 60.0,
+        resume: Path | None = None,
     ) -> tuple[str, list[str], list[tuple[str, ...]], FakeClock]:
         output: list[str] = []
         clock = FakeClock()
@@ -264,7 +265,7 @@ class ReviewReadyTests(unittest.TestCase):
             check_wait_timeout=wait_timeout,
             check_startup_grace=startup_grace,
             check_progress_interval=progress_interval,
-        ).run()
+        ).run(resume=resume)
         return head, output, runner.calls, clock
 
     def assert_blocked(
@@ -342,41 +343,24 @@ Flags:
             FakeRunner(initial_local_head=MOVED_HEAD), "local HEAD does not match"
         )
 
-    def test_doctor_failure_reports_all_fail_lines_from_realistic_stdout(self) -> None:
-        runner = FakeRunner(
-            doctor_returncode=1,
-            doctor_stdout=(
-                "OK   git: git version 2.55.0\n"
-                "OK   gh: gh version 2.97.0\n"
-                "FAIL Claude authentication: token=gho_supersecretvalue\n"
-                "FAIL Grok authentication: run `grok login`\n"
-            ),
-        )
-        with self.assertRaises(review_ready.ReviewReadyError) as raised:
-            self.invoke(runner)
-        message = str(raised.exception)
-        self.assertIn("FAIL Claude authentication: token=[REDACTED]", message)
-        self.assertIn("FAIL Grok authentication: run `grok login`", message)
-        self.assertNotIn("OK   git", message)
-        self.assertNotIn("supersecretvalue", message)
-        self.assertEqual(runner.check_lookup_count, 0)
+    def test_blanket_doctor_is_not_a_prerequisite_for_collecting_independent_reviews(self) -> None:
+        runner = FakeRunner(doctor_returncode=1, doctor_stdout="FAIL Claude authentication")
+        self.invoke(runner)
+        self.assertNotIn(("python3", "tools/external_review.py", "doctor"), runner.calls)
+        self.assertEqual(len(self.review_calls(runner)), 1)
+
+    def test_resume_is_forwarded_only_after_exact_head_ci_passes(self) -> None:
+        runner = FakeRunner(check_snapshots=[[PENDING], [PASS]])
+        resume = Path(".cache/external-reviews/attempt.json")
+        self.invoke(runner, resume=resume)
+        self.assertEqual(self.review_calls(runner)[0][-2:], ("--resume", str(resume)))
+        self.assertGreater(runner.check_lookup_count, 0)
+
+    def test_resume_cannot_bypass_failed_ci(self) -> None:
+        runner = FakeRunner(check_snapshots=[[FAIL]])
+        with self.assertRaises(review_ready.ReviewReadyError):
+            self.invoke(runner, resume=Path("prior.json"))
         self.assertEqual(self.review_calls(runner), [])
-
-    def test_successful_doctor_emits_concise_health_status(self) -> None:
-        _head, output, _calls, _clock = self.invoke(FakeRunner())
-        self.assertIn("External-review doctor: healthy", output)
-
-    def test_failed_doctor_never_uses_ok_line_as_failure_reason(self) -> None:
-        runner = FakeRunner(
-            doctor_returncode=1,
-            doctor_stdout="OK   git: git version 2.55.0\n",
-        )
-        with self.assertRaises(review_ready.ReviewReadyError) as raised:
-            self.invoke(runner)
-        message = str(raised.exception)
-        self.assertIn("external-review doctor failed with exit code 1", message)
-        self.assertNotIn("OK   git", message)
-        self.assertEqual(runner.check_lookup_count, 0)
 
     def test_pending_then_pass_invokes_review_once(self) -> None:
         runner = FakeRunner(check_snapshots=[[PENDING], [PASS]])
@@ -587,7 +571,7 @@ Flags:
         self.assertIn(
             "never return FINDINGS with an empty findings array", normalized_prompt
         )
-        self.assertIn("fail instead of emitting a placeholder", normalized_prompt)
+        self.assertIn("return verdict INCOMPLETE", normalized_prompt)
 
     def test_no_merge_rerun_or_pr_mutation_command_is_invoked(self) -> None:
         runner = FakeRunner()
