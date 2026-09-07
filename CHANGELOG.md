@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Hardened review finality checks for “not yet” and contracted negation while allowing explicitly introduced quoted test fixtures in completed reviews. Preserve diagnostic readability when wrapped prompts contain whitespace-only diff lines without weakening meaningful prompt or secret redaction.
+
 - Reject bare placeholder review fields and explicit unfinished or unperformed review statements, including the two failures observed during PR #143 review. Regressions cover both providers, all review fields, and atomic rejection without suppressing legitimate findings about incomplete product features.
 
 - Made external-review failures identify their component and stage, retain bounded redacted diagnostics, offer known authentication remediation, and report skipped providers plus posting state without changing exact-head validation, isolation, or pre-post all-provider atomicity. `doctor` now preserves safe command-failure reasons and names missing CLI flags.

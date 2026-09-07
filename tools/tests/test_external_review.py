@@ -972,6 +972,15 @@ class ReviewBridgeTests(unittest.TestCase):
             "Review not performed.",
             "This review has not been completed.",
             "I have not performed the review.",
+            "Review not yet performed.",
+            "This review has not yet been performed.",
+            "I haven't completed the review.",
+            "I haven’t yet completed the review.",
+            "We haven't yet conducted this review.",
+            "This review hasn't yet been performed.",
+            'The guard rejects fixture "placeholder". This review is unfinished.',
+            '"This review is unfinished."',
+            '`Review not yet performed.`',
         )
         for provider in ("claude", "grok"):
             for location in ("body", "title", "detail"):
@@ -996,6 +1005,40 @@ class ReviewBridgeTests(unittest.TestCase):
                             metadata_sequence=[metadata(), metadata()],
                         )
                         self.assertEqual(github.comments, [])
+                        self.assertTrue(repository.cleaned)
+
+    def test_completed_reviews_can_quote_explicit_nonfinal_examples(self) -> None:
+        examples = (
+            'The finality guard correctly rejects the fixture "This review is unfinished." before posting.',
+            "The guard rejects the fixture ‘I haven’t completed the review.’ before posting.",
+            "The guard rejects fixture ‘I haven’t completed the review. This review is unfinished.’ before posting.",
+            "The guard rejects fixture 'I haven't completed the review. This review is unfinished.' before posting.",
+            'The guard rejects example “Review not yet performed.” before posting.',
+            'The test payload `This review has not yet been performed.` is rejected.',
+            'The fixture "Review bootstrap" correctly fails validation.',
+            'The test input:\n```text\nThis review is unfinished.\n```\nis rejected before posting.',
+        )
+        for provider in ("claude", "grok"):
+            for location in ("body", "title", "detail"):
+                for text in examples:
+                    with self.subTest(provider=provider, location=location, text=text):
+                        result = execution(
+                            provider,
+                            verdict="PASS" if location == "body" else "FINDINGS",
+                            body=text if location == "body" else "A completed review found a test coverage gap.",
+                            findings=() if location == "body" else (
+                                bridge.ReviewFinding(
+                                    "LOW", text if location == "title" else "Add a fixture regression",
+                                    text if location == "detail" else "Add the corresponding edge-case test.",
+                                ),
+                            ),
+                        )
+                        outcomes = {name: execution(name) for name in ("claude", "grok")}
+                        outcomes[provider] = result
+                        posted, _github, repository = self.run_bridge(("claude", "grok"), outcomes)
+                        self.assertEqual(len(posted), 2)
+                        if location == "body":
+                            self.assertIn(text, _github.comments[0 if provider == "claude" else 1])
                         self.assertTrue(repository.cleaned)
 
     def test_final_reviews_can_report_unfinished_product_behavior(self) -> None:
@@ -2248,6 +2291,20 @@ class DiagnosticTests(unittest.TestCase):
         for forbidden in ("private request","private second",auth,"opaque-secret-value","ghp_secretvalue","\x00","\x07","\x1b"):
             self.assertNotIn(forbidden,text)
         self.assertLessEqual(len(error.diagnostic.detail),600)
+
+    def test_whitespace_prompt_lines_preserve_diagnostics_and_meaningful_redaction(self):
+        message = "Claude returned non-final review output"
+        self.assertEqual(bridge.diagnostic_text(message, ("", " ", "\t", " \t ")), message)
+        prompt = "private request line\n \n\t\nprivate second line"
+        error, _runner = self.adapter_error(
+            completed(returncode=1, stderr=message + " " + prompt + " api_key=opaque-secret-value"),
+            prompt,
+        )
+        text = str(error)
+        self.assertIn(message, text)
+        for secret in ("private request line", "private second line", "opaque-secret-value"):
+            self.assertNotIn(secret, text)
+        self.assertIn("[REDACTED]", text)
 
     def test_parsing_failure_is_distinct_from_process_failure(self):
         error,_ = self.adapter_error(completed(stdout="not JSON"))

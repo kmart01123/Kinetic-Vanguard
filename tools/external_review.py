@@ -61,14 +61,14 @@ NON_FINAL_REVIEW_PATTERNS = (
     re.compile(
         r"(?:\b(?:this|the|my|our) review|^review)"
         r"(?: (?:is|remains))?(?: still)?"
-        r" (?:unfinished|incomplete|not (?:performed|completed|conducted|started))\b"
+        r" (?:unfinished|incomplete|not(?: yet)? (?:performed|completed|conducted|started))\b"
     ),
     re.compile(
         r"(?:\b(?:this|the|my|our) review|^review)"
-        r" has not been (?:performed|completed|conducted|started)\b"
+        r" has not(?: yet)? been (?:performed|completed|conducted|started)\b"
     ),
     re.compile(
-        r"\b(?:i|we)(?: have)? not (?:performed|completed|conducted|started)"
+        r"\b(?:i|we)(?: have)? not(?: yet)? (?:performed|completed|conducted|started)"
         r" (?:this|the|my|our) review\b"
     ),
     re.compile(r"\b(?:the )?review(?: request)? is being processed\b"),
@@ -462,7 +462,7 @@ def diagnostic_text(text: str, redactions: Sequence[str] = (), *, limit: int | N
         resolved_auth = str(auth)
     values = (*redactions, str(auth), resolved_auth)
     for value in sorted(set(values), key=len, reverse=True):
-        if value:
+        if value.strip():
             text = text.replace(value, "[REDACTED]")
     text = redact_sensitive(text)
     return " ".join(text.split())[:limit] or "no diagnostic emitted"
@@ -1597,6 +1597,27 @@ def validate_and_strip_body_claims(
     return stripped
 
 
+# Only explicitly introduced example payloads are excluded from self-status checks.
+# Quotation alone does not establish that an unfinished statement is an example.
+REVIEW_EXAMPLE = re.compile(
+    r"\b(?:fixture|example|test (?:case|payload|input)|sample (?:payload|input)|literal)"
+    r"(?:\s+(?:text|value|payload))?\s*:?\s*"
+    r'(?:"[^"\n]*"|“[^”\n]*”|‘(?:[^’\n]|(?<=\w)’(?=\w))*’|'
+    r"'(?:[^'\n]|(?<=\w)'(?=\w))*'|(?P<ticks>`+)(?:(?!(?P=ticks))[\s\S])*(?P=ticks))",
+    re.IGNORECASE,
+)
+
+
+def normalized_finality_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    # Leave surrounding prose intact so a real self-status claim still rejects.
+    text = REVIEW_EXAMPLE.sub("quoted example payload", text).casefold()
+    text = re.sub(
+        r"\b(have|has|had)n['’]t\b", lambda match: match.group(1) + " not", text
+    )
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
 def validate_execution(
     execution: ProviderExecution,
     provider: ProviderSpec,
@@ -1620,27 +1641,13 @@ def validate_execution(
         raise ReviewBridgeError(
             f"{provider.display_name} returned FINDINGS without structured findings"
         )
-    normalized_titles = [
-        re.sub(
-            r"[^a-z0-9]+",
-            " ",
-            unicodedata.normalize("NFKC", finding.title).casefold(),
-        ).strip()
-        for finding in result.findings
-    ]
+    normalized_titles = [normalized_finality_text(finding.title) for finding in result.findings]
     finality_texts = (
         result.body_markdown,
         *(finding.title for finding in result.findings),
         *(finding.detail for finding in result.findings),
     )
-    normalized_review_texts = [
-        re.sub(
-            r"[^a-z0-9]+",
-            " ",
-            unicodedata.normalize("NFKC", text).casefold(),
-        ).strip()
-        for text in finality_texts
-    ]
+    normalized_review_texts = [normalized_finality_text(text) for text in finality_texts]
     if NON_FINAL_REVIEW_TITLES.intersection(normalized_titles) or any(
         pattern.search(text)
         for text in normalized_review_texts
