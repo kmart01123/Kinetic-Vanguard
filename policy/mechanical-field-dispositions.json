@@ -128,8 +128,7 @@
     },
     "calculator.harness_mechanics.feature_rules[].targeting_by_tier[].kind": {
       "cluster_remainder": {"disposition": "benchmark_only", "target": "derive benchmark occupancy from canonical area geometry and benchmark cluster size"},
-      "fixed_additional": {"disposition": "generalize", "target": "additional-target selector with fixed cardinality"},
-      "proficiency_bonus_additional": {"disposition": "generalize", "target": "additional-target selector with Proficiency Bonus cardinality"}
+      "fixed_additional": {"disposition": "generalize", "target": "additional-target selector with fixed cardinality"}
     },
     "calculator.harness_mechanics.feature_rules[].control_tiers[].application": {
       "failed_save": {"disposition": "derive", "target": "saving_throw.failure branch"},
@@ -137,6 +136,7 @@
     },
     "calculator.harness_mechanics.feature_rules[].control_tiers[].effects[].gate": {
       "on_failed_save": {"disposition": "generalize", "target": "saving_throw.failure branch"},
+      "partial_on_success": {"disposition":"promote","target":"Explicit save-dependent movement with authored failure and success magnitudes."},
       "on_reach": {"disposition": "generalize", "target": "unconditional delivery step; remove harness reach terminology"},
       "while_in_area": {"disposition": "generalize", "target": "persistent-area occupancy trigger"}
     }

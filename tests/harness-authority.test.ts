@@ -8,9 +8,9 @@ import { validateSemantics } from "../src/validate.js";
 
 test("harness projection reads the real authority and joins mechanics by stable entity ID",async()=>{
   const projection=await createHarnessProjection();
-  assert.equal(projection.projection_version,"1.4.0");
+  assert.equal(projection.projection_version,"1.5.0");
   assert.match(projection.authority_path,/\/KineticVanguard\.yaml$/);
-  assert.ok(Number.isInteger(projection.core.action_economy.standalone_psionic_action_limit_per_turn));
+  assert.equal(projection.core.action_economy.standalone_psionic_action_limit_per_turn,null);
   assert.equal(projection.core.manifested_strike.rider_repeatability,"per_manifested_strike");
   assert.equal(new Set(projection.features.map(item=>item.entity_id)).size,projection.features.length);
   assert.ok(projection.features.every(item=>Number.isInteger(item.minimum_level)&&Number.isInteger(item.psi_cost)&&item.title.length>0));
@@ -29,7 +29,7 @@ test("harness semantic mutations fail with focused diagnostics",async()=>{
   const {authority}=await loadAuthority();
   const expectCode=(code:string,mutate:(candidate:any)=>void)=>{const candidate=structuredClone(authority) as any;mutate(candidate);const diagnostics=validateSemantics(candidate);assert.ok(diagnostics.some(item=>item.code===code),`${code}: ${diagnostics.map(item=>item.code).join(", ")}`);};
   const system=(candidate:any,id:string)=>candidate.entities.find((entity:any)=>entity.id===id).system_mechanics;
-  expectCode("harness.action_economy",candidate=>{system(candidate,"common_overload").action_economy.action_surge_allows_additional_standalone_psionic_action=true;});
+  expectCode("harness.action_economy",candidate=>{system(candidate,"common_overload").action_economy.action_surge_allows_additional_standalone_psionic_action=false;});
   expectCode("harness.attack_formula",candidate=>{system(candidate,"common_manifested_strike").manifested_strike.attack_bonus.base=1;});
   expectCode("harness.holdout_formula",candidate=>{system(candidate,"common_manifested_strike").manifested_strike.holdout.formulas[1].sides=8;});
   expectCode("harness.save_dc_formula",candidate=>{system(candidate,"common_manifested_strike").manifested_strike.save_dc.components.reverse();});

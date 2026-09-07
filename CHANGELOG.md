@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Completed the approved v14.4 resolution simplification: Action Surge can activate another eligible standalone psionic Action; Electron Burst uses one 1d8/2d8/3d8 packet for every affected creature; Static Discharge targets up to 2/4/6 total creatures by tier; and Tier-2 feature/rider damage ignores Resistance across all disciplines and Advanced Training without bypassing Immunity or changing the triggering Manifested Strike or Blood Tax.
+- Expressed Telekinetic Slam and Deflection Screen successful-save movement with an explicit `partial_on_success` primitive tied to their Strength saves, preserving both existing movement outcomes. Moved resistance penetration to shared Overload authority, removed per-feature flags, and updated consumer projections and action planning. Schema advances to 2.9.0 and harness projection to 1.5.0; these approved rules changes continue the existing unreleased v14.4.0 line.
 - Corrected Grok review tool selection to native `read_file,grep` IDs while retaining scoped Read/Grep permission rules. Reject explicit CLI error or interrupted-completion metadata before accepting a review payload, and cover structured-final versus progress-text selection with offline regressions.
 
 - Closed the remaining PR #142 review findings: exclude short inferred prompt fragments from substring redaction while preserving explicit secret redaction, reject unfinished review statements after prose lead-ins while retaining quoted-fixture support, and remove the unused review-ready doctor diagnostic helper.

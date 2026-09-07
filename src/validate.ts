@@ -1,7 +1,7 @@
 import type { Authority, CalculatorLevelBand, CalculatorProjection, ConcreteDamageType, ConcreteSaveAbility, Diagnostic, MechanicsStep, MechanicsSurface, MechanicsTargeting, MechanicsTier } from "./types.js";
 import { codepointCompare } from "./canonical.js";
 import { projectCalculatorMechanics,projectHarnessMechanics } from "./mechanics.js";
-import { deriveCalculatorProjection,systemMechanicsFields } from "./mechanics-selectors.js";
+import { deriveCalculatorProjection,selectSystemMechanics,systemMechanicsFields } from "./mechanics-selectors.js";
 
 function duplicateDiagnostics(values:string[],code:string,label:string):Diagnostic[]{const seen=new Set<string>();const diagnostics:Diagnostic[]=[];for(const value of values){if(seen.has(value))diagnostics.push({severity:"error",code,message:`Duplicate ${label}: ${value}`});seen.add(value);}return diagnostics;}
 function vocabulary(authority:Authority,name:string):Set<string>{return new Set((authority.vocabularies[name]??[]).map(value=>value.id));}
@@ -27,16 +27,17 @@ function targetingDiagnostics(entityId:string,targeting:MechanicsTargeting|undef
 }
 function mechanicsStepDiagnostics(entityId:string,surface:MechanicsSurface,steps:MechanicsStep[],path:string,targeting?:MechanicsTier["targeting"],tierHasDamage=false):Diagnostic[]{
   const diagnostics:Diagnostic[]=[],seenStepIds=new Set<string>(),modeIds=new Set((surface.modes??[]).map(mode=>mode.id));
-  const visitSteps=(rows:MechanicsStep[],rowsPath:string)=>{for(const [index,step] of rows.entries()){
+  const visitSteps=(rows:MechanicsStep[],rowsPath:string,inSaveFailure=false)=>{for(const [index,step] of rows.entries()){
     const stepPath=`${rowsPath}/${index}`;
     if("replaces" in step&&step.replaces&&!seenStepIds.has(step.replaces))diagnostics.push({severity:"error",code:"mechanics.replacement_reference",message:`${entityId} replacement target must be an earlier step in the same tier: ${step.replaces}`,path:stepPath});
     if("id" in step&&step.id){if(seenStepIds.has(step.id))diagnostics.push({severity:"error",code:"mechanics.step_duplicate",message:`${entityId} mechanics step ID is duplicated: ${step.id}`,path:stepPath});seenStepIds.add(step.id);}
     if(targeting?.topology==="single"&&"target" in step&&step.target==="secondary")diagnostics.push({severity:"error",code:"mechanics.single_secondary_target",message:`${entityId} single-target mechanics cannot define an independent secondary target`,path:stepPath});
+    if(step.kind==="forced_movement"&&(step.success_feet!==undefined||step.resolution==="partial_on_success")&&(!inSaveFailure||step.resolution!=="partial_on_success"||step.success_feet===undefined||step.success_feet>=step.feet||step.requires_condition!==undefined||step.application!==undefined))diagnostics.push({severity:"error",code:"mechanics.partial_on_success",message:`${entityId} partial-on-success movement requires explicit smaller success magnitude inside a save failure branch, without another application gate or condition dependency`,path:stepPath});
     if(step.kind==="forced_movement")for(const [directionIndex,direction] of (step.directions??[]).entries())if(!modeIds.has(direction.mode))diagnostics.push({severity:"error",code:"mechanics.mode_reference",message:`${entityId} forced-movement direction references unknown mode: ${direction.mode}`,path:`${stepPath}/directions/${directionIndex}/mode`});
     if(step.kind==="saving_throw"){
       if(step.independent_per_target&&!supportsIndependentTargets(targeting))diagnostics.push({severity:"error",code:"mechanics.independent_save_targeting",message:`${entityId} independent per-target saves require explicit multi-target mechanics`,path:stepPath});
       if(step.resolve_even_if_damage_prevented&&!tierHasDamage)diagnostics.push({severity:"error",code:"mechanics.damage_independent_save_requires_damage",message:`${entityId} damage-independent save resolution requires damage in the same mechanics tier`,path:stepPath});
-      visitSteps(step.failure,`${stepPath}/failure`);visitSteps(step.success??[],`${stepPath}/success`);
+      visitSteps(step.failure,`${stepPath}/failure`,true);visitSteps(step.success??[],`${stepPath}/success`);
     }
   }};
   visitSteps(steps,path);return diagnostics;
@@ -145,7 +146,7 @@ export function validateHarnessFeatureRules(authority:Authority,calculator:Calcu
         if(effect.requires_condition&&!tierConditions.has(effect.requires_condition))diagnostics.push({severity:"error",code:"harness.control_dependency",message:`${rule.entity_id} Tier ${control.tier} effect depends on an unmodeled ${effect.requires_condition} condition`,path:effectPath});
         const outcomes=new Set(effect.outcomes??[]),hasBranchMagnitude=effect.failed_save_magnitude_feet!==undefined||effect.successful_save_magnitude_feet!==undefined;
         if(outcomes.has("forced_movement")&&!((effect.magnitude_feet!==undefined)!==hasBranchMagnitude))diagnostics.push({severity:"error",code:"harness.control_magnitude",message:`${rule.entity_id} Tier ${control.tier} forced movement requires either one feet magnitude or a save-result magnitude pair`,path:effectPath});
-        if(hasBranchMagnitude&&(effect.failed_save_magnitude_feet===undefined||effect.successful_save_magnitude_feet===undefined||control.application!=="failed_save"||effect.gate!=="on_reach"))diagnostics.push({severity:"error",code:"harness.control_branch_magnitude",message:`${rule.entity_id} Tier ${control.tier} branch magnitudes require both save results on an on-reach failed-save effect`,path:effectPath});
+        if(hasBranchMagnitude&&(effect.failed_save_magnitude_feet===undefined||effect.successful_save_magnitude_feet===undefined||control.application!=="failed_save"||effect.gate!=="partial_on_success"))diagnostics.push({severity:"error",code:"harness.control_branch_magnitude",message:`${rule.entity_id} Tier ${control.tier} branch magnitudes require both save results on a partial-on-success effect`,path:effectPath});
         if((effect.magnitude_feet!==undefined||hasBranchMagnitude)&&!outcomes.has("forced_movement")&&!outcomes.has("speed_reduction"))diagnostics.push({severity:"error",code:"harness.control_magnitude_outcome",message:`${rule.entity_id} Tier ${control.tier} feet magnitude requires movement control`,path:effectPath});
         if(outcomes.has("attack_disadvantage")&&!effect.attack_scope)diagnostics.push({severity:"error",code:"harness.control_attack_scope",message:`${rule.entity_id} Tier ${control.tier} attack Disadvantage requires explicit scope`,path:effectPath});
         if(effect.attack_scope&&!outcomes.has("attack_disadvantage"))diagnostics.push({severity:"error",code:"harness.control_attack_scope_extra",message:`${rule.entity_id} Tier ${control.tier} attack scope requires attack Disadvantage`,path:effectPath});
@@ -214,7 +215,7 @@ export function validateSemantics(authority:Authority):Diagnostic[]{
       diagnostics.push(...mechanicsTierDiagnostics(entity.id,surface,surface.tiers??[],`${surfacePath}/tiers`));
     }
     try{
-      projectCalculatorMechanics(entity);projectHarnessMechanics(entity);
+      projectCalculatorMechanics(entity);projectHarnessMechanics(entity,selectSystemMechanics(authority).overload);
     }catch(error){diagnostics.push({severity:"error",code:"mechanics.projection",message:`${entity.id} neutral mechanics cannot be projected: ${error instanceof Error?error.message:String(error)}`,path:mechanicsPath});}
   }
   const utilityIds=calculator.utility_cards.map(card=>card.id);diagnostics.push(...duplicateDiagnostics(utilityIds,"calculator.utility_duplicate","calculator utility card ID"));
@@ -237,7 +238,7 @@ export function validateSemantics(authority:Authority):Diagnostic[]{
   const expectedTierMinimums=[[0,3],[1,3],[2,10]] as const;
   if(JSON.stringify(calculator.tier_minimum_levels.map(item=>[item.tier,item.minimum_level]))!==JSON.stringify(expectedTierMinimums))diagnostics.push({severity:"error",code:"calculator.tier_minimum_levels",message:"Calculator tier minimum levels must be Tier 0 at level 3, Tier 1 at level 3, and Tier 2 at level 10",path:"/calculator/tier_minimum_levels"});
   const harness=calculator.harness_mechanics;
-  if(JSON.stringify(harness.action_economy)!==JSON.stringify({standalone_psionic_action_limit_per_turn:1,action_surge_allows_additional_standalone_psionic_action:false}))diagnostics.push({severity:"error",code:"harness.action_economy",message:"Harness action economy must allow at most one standalone psionic Action per turn and no additional standalone activation from Action Surge",path:"/calculator/harness_mechanics/action_economy"});
+  if(JSON.stringify(harness.action_economy)!==JSON.stringify({standalone_psionic_action_limit_per_turn:null,action_surge_allows_additional_standalone_psionic_action:true}))diagnostics.push({severity:"error",code:"harness.action_economy",message:"Harness action economy must use available Actions without a standalone per-turn limit and allow Action Surge activations",path:"/calculator/harness_mechanics/action_economy"});
   if(harness.manifested_strike.rider_repeatability!=="per_manifested_strike")diagnostics.push({severity:"error",code:"harness.rider_repeatability",message:"Manifested Strike riders must use the supported per_manifested_strike repeatability contract",path:"/calculator/harness_mechanics/manifested_strike/rider_repeatability"});
   const expectedHoldout={damage_type:"force",declaration_timing:"before_attack_roll",formulas:[{minimum_level:3,maximum_level:17,kind:"halve_total_rounded_down"},{minimum_level:18,maximum_level:20,kind:"dice_plus_psionic_ability_modifier",count:1,sides:6}]};
   if(JSON.stringify(harness.manifested_strike.holdout)!==JSON.stringify(expectedHoldout))diagnostics.push({severity:"error",code:"harness.holdout_formula",message:"Holdout must retain the level-banded base and Refined Holdout formulas",path:"/calculator/harness_mechanics/manifested_strike/holdout"});
@@ -279,9 +280,9 @@ export function validateSemantics(authority:Authority):Diagnostic[]{
       };
       validateDamage(tier.damage,`${tierPath}/damage`,"damage");
       if(tier.secondary_damage){
-        if(!["electron_burst","forked_lightning"].includes(feature.entity_id))diagnostics.push({severity:"error",code:"calculator.secondary_damage_feature",message:"Only electron_burst and forked_lightning may define secondary damage",path:`${tierPath}/secondary_damage`});
+        if(!["forked_lightning"].includes(feature.entity_id))diagnostics.push({severity:"error",code:"calculator.secondary_damage_feature",message:"Only forked_lightning may define secondary damage",path:`${tierPath}/secondary_damage`});
         validateDamage(tier.secondary_damage,`${tierPath}/secondary_damage`,"secondary damage");
-      }else if(["electron_burst","forked_lightning"].includes(feature.entity_id))diagnostics.push({severity:"error",code:"calculator.secondary_damage_required",message:`${feature.entity_id} Tier ${tier.tier} must define secondary damage`,path:`${tierPath}/secondary_damage`});
+      }else if(["forked_lightning"].includes(feature.entity_id))diagnostics.push({severity:"error",code:"calculator.secondary_damage_required",message:`${feature.entity_id} Tier ${tier.tier} must define secondary damage`,path:`${tierPath}/secondary_damage`});
     }
     for(const [metricIndex,metric] of (feature.metrics??[]).entries())if("values" in metric){const metricTiers=metric.values.map(value=>value.tier);if(JSON.stringify([...metricTiers].sort((a,b)=>a-b))!==JSON.stringify([0,1,2]))diagnostics.push({severity:"error",code:"calculator.metric_tier_coverage",message:`${feature.entity_id} metric ${metric.label} must cover Tiers 0, 1, and 2 exactly once`,path:`${featurePath}/metrics/${metricIndex}/values`});}
   }

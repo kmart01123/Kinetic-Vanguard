@@ -60,7 +60,7 @@ README_PATH = PROJECT_ROOT / "README.md"
 CONTROL_DETAIL_PATH = PROJECT_ROOT / "CONTROL_BENCHMARK_DETAIL.md"
 DAMAGE_SECTION_START = "The front-door damage view is the single-target benchmark:"
 FIGHTER_20_NOTE = (
-    "**Fighter 20 note:** [Why the current v14.3 snapshot is COLD at level 20]"
+    "**Fighter 20 note:** [Why the published v14.3 snapshot is COLD at level 20]"
     "(https://github.com/kmart01123/kinetic-vanguard/issues/122#issuecomment-5389467514)"
 )
 DAMAGE_SCOPES = ("primary-target DPR", "aggregate cluster DPR")

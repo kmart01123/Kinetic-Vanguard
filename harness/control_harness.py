@@ -79,12 +79,12 @@ def _kv_rider_delivery_recipe(control:dict[str,Any],rider:bool,target_role:str="
     applicable=[effect for effect in control["effects"] if effect.get("target_role","all") in {"all",target_role} and (effect.get("conditions") or effect.get("outcomes"))]
     if not applicable:raise ValueError("KV delivery recipe has no applicable modeled control effect")
     gates={str(effect["gate"]) for effect in applicable}
-    unknown=gates-{"on_reach","on_failed_save"}
+    unknown=gates-{"on_reach","on_failed_save","partial_on_success"}
     if unknown:raise ValueError(f"Unsupported KV delivery effect gate: {sorted(unknown)}")
     application=str(control["application"])
     if application not in {"failed_save","no_save"}:raise ValueError(f"Unsupported KV delivery application: {application}")
-    if "on_failed_save" in gates and application!="failed_save":raise ValueError("KV delivery application disagrees with applicable effect gates")
-    hit_gated=bool(control.get("hit_gated"));has_reach="on_reach" in gates;has_failed_save="on_failed_save" in gates
+    if gates & {"on_failed_save","partial_on_success"} and application!="failed_save":raise ValueError("KV delivery application disagrees with applicable effect gates")
+    hit_gated=bool(control.get("hit_gated"));has_reach=bool(gates & {"on_reach","partial_on_success"});has_failed_save=bool(gates & {"on_failed_save","partial_on_success"})
     save_ability=str(control.get("save","")) if has_failed_save else ""
     if save_ability=="discipline_signature":raise ValueError("KV delivery recipe requires a resolved signature save")
     if has_failed_save and not save_ability:raise ValueError("KV failed-save delivery gate lacks a save ability")
