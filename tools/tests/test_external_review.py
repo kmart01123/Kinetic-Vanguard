@@ -1978,7 +1978,7 @@ class ProviderAdapterTests(unittest.TestCase):
                 f"Grep({original_grok_home.resolve().as_posix()}/**)", command
             )
         self.assertEqual(
-            provider_command[provider_command.index("--tools") + 1], "Read,Grep"
+            provider_command[provider_command.index("--tools") + 1], "read_file,grep"
         )
         self.assertIn("Bash", provider_command)
         self.assertFalse(any("Bash(git" in argument for argument in provider_command))

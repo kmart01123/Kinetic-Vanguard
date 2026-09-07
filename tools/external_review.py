@@ -45,6 +45,8 @@ GITHUB_SECRET_VARIABLES = (
 VERDICTS = frozenset(("PASS", "FINDINGS", "INCOMPLETE"))
 FINDING_SEVERITIES = frozenset(("BLOCKER", "HIGH", "MEDIUM", "LOW"))
 GROK_SANDBOX_PROFILE = "kv-external-review"
+# --tools selects native tool IDs; Read/Grep are permission-rule prefixes.
+GROK_REVIEW_TOOLS = ("read_file", "grep")
 GROK_SANDBOX_FAILURE_PATTERN = re.compile(
     r"(?:sandbox could not be applied|failed to apply sandbox|unknown sandbox profile)",
     re.IGNORECASE,
@@ -965,8 +967,37 @@ def select_model_usage(model_usage: object, provider_name: str) -> str | None:
     return normalize_metadata_value(selected)
 
 
+def validate_provider_completion(outer: Mapping[str, object], provider_name: str) -> None:
+    """Reject CLI-reported interruption/errors before considering model prose.
+
+    Legacy flat contracts and envelopes with absent/null stop metadata remain
+    supported, but explicit failure metadata always overrides a usable payload.
+    Never interpolate arbitrary envelope strings: they may echo private input.
+    """
+    for field in ("error", "structured_output_error", "structuredOutputError"):
+        if field in outer and outer[field] is not None:
+            raise ReviewBridgeError(f"{provider_name} CLI reported {field}; review was not completed")
+    if "is_error" in outer and outer["is_error"] is not False:
+        raise ReviewBridgeError(f"{provider_name} CLI reported an error or malformed is_error status")
+    if outer.get("type") == "error":
+        raise ReviewBridgeError(f"{provider_name} CLI returned an error result")
+    if "subtype" in outer and outer["subtype"] != "success":
+        raise ReviewBridgeError(f"{provider_name} CLI returned a non-success result subtype")
+    for field in ("stopReason", "stop_reason"):
+        if outer.get(field) is not None and outer[field] != "end_turn":
+            reason = outer[field]
+            # Only known protocol enums are safe, useful diagnostic details.
+            known = {"max_tokens", "max_turn_requests", "refusal", "cancelled", "tool_use", "pause_turn", "stop_sequence"}
+            detail = reason if isinstance(reason, str) and reason in known else "unrecognized"
+            raise ReviewBridgeError(
+                f"{provider_name} CLI did not finish the review ({field}: {detail}); "
+                "partial output was rejected"
+            )
+
+
 def extract_contract(output: str, provider_name: str) -> tuple[dict[str, object], str | None]:
     outer = parse_json_object(output, f"{provider_name} provider")
+    validate_provider_completion(outer, provider_name)
     required = {"pr_number", "head_sha", "verdict", "body_markdown", "findings"}
     if required.issubset(outer):
         contract = dict(outer)
@@ -1358,7 +1389,7 @@ class ProviderAdapter:
             "--permission-mode",
             "dontAsk",
             "--tools",
-            "Read,Grep",
+            ",".join(GROK_REVIEW_TOOLS),
             "--sandbox",
             sandbox.name,
             "--no-subagents",

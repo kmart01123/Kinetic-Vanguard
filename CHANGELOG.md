@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Corrected Grok review tool selection to native `read_file,grep` IDs while retaining scoped Read/Grep permission rules. Reject explicit CLI error or interrupted-completion metadata before accepting a review payload, and cover structured-final versus progress-text selection with offline regressions.
+
 - Closed the remaining PR #142 review findings: exclude short inferred prompt fragments from substring redaction while preserving explicit secret redaction, reject unfinished review statements after prose lead-ins while retaining quoted-fixture support, and remove the unused review-ready doctor diagnostic helper.
 
 - Fixed live CLI output truncation by capturing stdout/stderr in private temporary regular files rather than pipes; this restores the complete Claude capability surface. Excluded punctuation-only diff markers from prompt-line redaction so diagnostics preserve CLI flags and hyphenated terms while meaningful prompts and explicit secrets remain redacted.
