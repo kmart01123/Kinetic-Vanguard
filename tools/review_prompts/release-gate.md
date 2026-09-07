@@ -17,5 +17,5 @@ reports, placeholders, "review in progress", "being processed", or promises of
 later findings. If there are no concrete findings, return verdict PASS with
 `findings = []`. If there are concrete findings, return verdict FINDINGS with at
 least one structured finding; never return FINDINGS with an empty findings array.
-If the review cannot be completed in this invocation, fail instead of emitting a
-placeholder.
+If the review cannot be completed in this invocation, return verdict INCOMPLETE
+with an empty findings array and a concise explanation instead of emitting a placeholder.

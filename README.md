@@ -85,7 +85,7 @@ npm run review:ready
 ```
 
 Optional full-roster commands are `npm run harness:damage -- --output-dir harness/results/damage` and `npm run harness:control -- --output-dir harness/results/control`. Generated results are ignored. See `harness/README.md` for current methodology, provenance, and matrix interpretation.
-`npm run review:ready` waits for the current PR's CI gate, revalidates its exact head, then runs Claude and Grok through `tools/external_review.py` and posts their reviews. Finding disposition and merge remain manual.
+`npm run review:ready` waits for the current PR's CI gate, revalidates its exact head, then runs Claude and Grok through `tools/external_review.py` and posts their reviews. If a provider fails, resume the printed checkpoint with `npm run review:ready -- --resume PATH`; already validated reviews are retained, and failed providers rerun independently. See [external review workflow and recovery](docs/external-reviews.md). Finding disposition and merge remain manual.
 `npm run build` writes the development publication to `artifacts/KineticVanguard.prototype.html`. It always carries a visible and accessibility-exposed `NON-RELEASE PROTOTYPE` identity.
 
 
