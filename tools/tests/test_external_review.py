@@ -2315,16 +2315,16 @@ class DiagnosticTests(unittest.TestCase):
         error,_ = self.adapter_error(completed(returncode=1,stdout="Not signed in"))
         self.assertIn("missing authentication",str(error)); self.assertIn("run claude auth login",str(error))
 
-    def test_all_mode_reports_skipped_provider_and_zero_posts(self):
+    def test_all_mode_collects_other_provider_after_failure_without_posting(self):
         github=FakeGitHub([metadata()]); repository=FakeRepository()
         adapters={"claude":FakeAdapter(bridge.ReviewBridgeError("service unavailable")),"grok":FakeAdapter(execution("grok"))}
         with self.assertRaises(bridge.ReviewBridgeError) as caught:
             bridge.ReviewBridge(github,repository,adapters,emit=lambda _:None).review(PR_NUMBER,("claude","grok"),"Review.")
         text=str(caught.exception)
-        self.assertIn("Claude: failed during review invocation",text)
-        self.assertIn("Grok: skipped because atomic execution aborted",text)
+        self.assertIn("Claude review invocation failed",text)
+        self.assertIn("Grok: validated",text)
         self.assertIn("posted reviews: none",text); self.assertEqual(github.comments,[])
-        self.assertEqual(adapters["grok"].prompts,[])
+        self.assertEqual(len(adapters["grok"].prompts),1)
 
     def test_stale_head_and_dirty_worktree_have_distinct_stage_labels(self):
         cases=[(FakeRepository(clean_error_for="Claude"),[metadata()],"dirty-worktree validation"),(FakeRepository(),[metadata(),metadata(head=MOVED_HEAD)],"exact-head revalidation")]

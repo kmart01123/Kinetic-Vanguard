@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -15,8 +16,13 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Callable, Iterator, Mapping, Protocol, Sequence
+
+try:
+    from tools.review_state import ReviewState, StateError
+except ModuleNotFoundError:  # Direct `python3 tools/external_review.py` entry point.
+    from review_state import ReviewState, StateError
 
 
 SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -36,7 +42,7 @@ GITHUB_SECRET_VARIABLES = (
     "GH_ENTERPRISE_TOKEN",
     "GITHUB_ENTERPRISE_TOKEN",
 )
-VERDICTS = frozenset(("PASS", "FINDINGS"))
+VERDICTS = frozenset(("PASS", "FINDINGS", "INCOMPLETE"))
 FINDING_SEVERITIES = frozenset(("BLOCKER", "HIGH", "MEDIUM", "LOW"))
 GROK_SANDBOX_PROFILE = "kv-external-review"
 GROK_SANDBOX_FAILURE_PATTERN = re.compile(
@@ -1041,8 +1047,8 @@ def review_result_from_contract(contract: Mapping[str, object]) -> ReviewResult:
                 detail=detail.strip(),
             )
         )
-    if verdict == "PASS" and findings:
-        raise ReviewBridgeError("PASS provider review output contained findings")
+    if verdict in {"PASS", "INCOMPLETE"} and findings:
+        raise ReviewBridgeError(f"{verdict} provider review output contained findings")
     if verdict == "FINDINGS" and not findings:
         raise ReviewBridgeError("FINDINGS provider review output contained no findings")
     optional: dict[str, str | None] = {}
@@ -1641,20 +1647,28 @@ def validate_execution(
         raise ReviewBridgeError(
             f"{provider.display_name} returned FINDINGS without structured findings"
         )
-    normalized_titles = [normalized_finality_text(finding.title) for finding in result.findings]
-    finality_texts = (
-        result.body_markdown,
-        *(finding.title for finding in result.findings),
-        *(finding.detail for finding in result.findings),
-    )
-    normalized_review_texts = [normalized_finality_text(text) for text in finality_texts]
-    if NON_FINAL_REVIEW_TITLES.intersection(normalized_titles) or any(
-        pattern.search(text)
-        for text in normalized_review_texts
-        for pattern in NON_FINAL_REVIEW_PATTERNS
-    ):
+    if result.verdict == "INCOMPLETE":
         raise ReviewBridgeError(
-            f"{provider.display_name} returned non-final review output"
+            f"{provider.display_name} returned INCOMPLETE; review could not be completed; "
+            f"reason: {diagnostic_text(result.body_markdown, limit=240)}; use --resume after addressing the cause"
+        )
+    finality_fields = [("body_markdown", result.body_markdown)]
+    for index, finding in enumerate(result.findings):
+        finality_fields.extend(((f"findings[{index}].title", finding.title),
+                                (f"findings[{index}].detail", finding.detail)))
+    for location, value in finality_fields:
+        normalized = normalized_finality_text(value)
+        if normalized in NON_FINAL_REVIEW_TITLES:
+            reason = "standalone progress status"
+        else:
+            match = next((pattern.search(normalized) for pattern in NON_FINAL_REVIEW_PATTERNS
+                          if pattern.search(normalized)), None)
+            if match is None:
+                continue
+            reason = "placeholder field" if "placeholder" in match.group() else "unfinished self-status claim"
+        raise ReviewBridgeError(
+            f"{provider.display_name} returned non-final review output in {location}: {reason}; "
+            "return a completed review or verdict INCOMPLETE"
         )
     if result.provider_claim:
         validate_identity_claim(result.provider_claim, provider.key, "provider")
@@ -1734,7 +1748,7 @@ Apply the following provider-neutral review request:
 {prompt.strip()}
 </review-request>
 
-Return only the requested machine-readable result. `pr_number` must be {metadata.number}; `head_sha` must be {metadata.head_sha}; `verdict` must be exactly PASS or FINDINGS; `body_markdown` must contain only the substantive review; `findings` must be an array of objects with `severity`, `title`, and `detail`. Use only BLOCKER, HIGH, MEDIUM, or LOW for `severity`. PASS requires an empty `findings` array. FINDINGS requires at least one substantive structured finding. Do not infer or manufacture structured findings from prose. Do not emit provider, reviewer, exact-head, verdict, or review-role headers in `body_markdown`. Provider identity is caller-owned metadata and must not be claimed or inferred in model prose.
+Return only the requested machine-readable result. `pr_number` must be {metadata.number}; `head_sha` must be {metadata.head_sha}; `verdict` must be exactly PASS, FINDINGS, or INCOMPLETE; `body_markdown` must contain only the substantive review; `findings` must be an array of objects with `severity`, `title`, and `detail`. Use only BLOCKER, HIGH, MEDIUM, or LOW for `severity`. PASS requires an empty `findings` array. FINDINGS requires at least one substantive structured finding. If inspection cannot be completed, return INCOMPLETE with an empty findings array and a concise explanation in body_markdown; never label a progress report PASS or FINDINGS. Refer to quoted test payloads explicitly as fixtures or examples. Do not infer or manufacture structured findings from prose. Do not emit provider, reviewer, exact-head, verdict, or review-role headers in `body_markdown`. Provider identity is caller-owned metadata and must not be claimed or inferred in model prose.
 """
 
 
@@ -1801,6 +1815,35 @@ class GitHub(Protocol):
     def post_comment(self, repository: str, pr_number: int, body: str) -> tuple[int, str]: ...
 
 
+def checkpoint_execution(execution: ProviderExecution) -> dict:
+    return json.loads(json.dumps(asdict(execution)))
+
+
+def restore_execution(payload: object) -> ProviderExecution:
+    try:
+        if not isinstance(payload, dict) or set(payload) != {"result", "cli_version", "model_metadata"}:
+            raise ValueError("invalid execution fields")
+        contract = dict(payload["result"])
+        for source, target in (("provider_claim", "provider"), ("reviewer_claim", "reviewer"), ("model_claim", "model")):
+            claim = contract.pop(source)
+            if claim is not None:
+                contract[target] = claim
+        result = review_result_from_contract(contract)
+        version, model = payload["cli_version"], payload["model_metadata"]
+        if not isinstance(version, str) or not version.strip() or (model is not None and not isinstance(model, str)):
+            raise ValueError("invalid provider metadata")
+        return ProviderExecution(result, version, model)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ReviewBridgeError("malformed retained execution; start a fresh review") from error
+
+
+def review_identity(repository: str, metadata: PRMetadata, prompt: str, providers: Sequence[str]) -> dict:
+    code = Path(__file__).read_bytes() + Path(__file__).with_name("review_state.py").read_bytes()
+    return {"repository": repository, "pr": asdict(metadata), "providers": list(providers),
+            "wrapped_prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "bridge_sha256": hashlib.sha256(code).hexdigest()}
+
+
 class ReviewBridge:
     def __init__(
         self,
@@ -1816,19 +1859,23 @@ class ReviewBridge:
         self.emit = emit
 
     def review(
-        self, pr_number: int, provider_names: Sequence[str], prompt: str
+        self, pr_number: int, provider_names: Sequence[str], prompt: str, *,
+        state_dir: Path | None = None, resume: Path | None = None, collect_only: bool = False,
+        expected_head: str | None = None
     ) -> list[PostedComment]:
         context = FailureContext("Bridge", "repository context", (prompt, *prompt.splitlines()))
         try:
-            return self._review(pr_number, provider_names, prompt, context)
+            return self._review(pr_number, provider_names, prompt, context, state_dir, resume, collect_only, expected_head)
         except ReviewAttemptError:
             raise
-        except ReviewBridgeError as error:
+        except (ReviewBridgeError, StateError, OSError) as error:
             state = "posted reviews: none" if not context.posting_started else f"posting attempted; outcome may be uncertain ({context.posted_count} confirmed comments)"
-            raise ReviewAttemptError(f"{context.error(error)}; {state}") from error
+            safe_error = error if isinstance(error, ReviewBridgeError) else ReviewBridgeError(str(error))
+            raise ReviewAttemptError(f"{context.error(safe_error)}; {state}") from error
 
     def _review(
-        self, pr_number: int, provider_names: Sequence[str], prompt: str, context: FailureContext
+        self, pr_number: int, provider_names: Sequence[str], prompt: str, context: FailureContext,
+        state_dir: Path | None, resume: Path | None, collect_only: bool, expected_head: str | None
     ) -> list[PostedComment]:
         repository_name = self.github.repository()
         context.stage = "initial PR identity validation"
@@ -1839,6 +1886,8 @@ class ReviewBridge:
             raise ReviewBridgeError(
                 f"PR #{pr_number} is {metadata.state}; only open PRs are supported"
             )
+        if expected_head is not None and (not SHA_PATTERN.fullmatch(expected_head) or metadata.head_sha.lower() != expected_head.lower()):
+            raise ReviewBridgeError("PR head no longer matches the CI-validated expected head; rerun review:ready")
         self.emit(f"Exact head: {metadata.head_sha}")
         context.stage = "commit lookup"
         self.repository.ensure_commit(metadata.base_sha)
@@ -1848,63 +1897,118 @@ class ReviewBridge:
             metadata.base_sha, metadata.head_sha
         )
         prompt_text = wrapped_prompt(prompt, metadata, base_to_head_diff)
+        if not provider_names or len(set(provider_names)) != len(provider_names) or any(name not in self.adapters for name in provider_names):
+            raise ReviewBridgeError("select each requested provider exactly once")
+        if resume is not None and state_dir is None:
+            raise ReviewBridgeError("resume requires a private review state directory")
+        context.stage = "review checkpoint"
+        manager = (ReviewState.open(state_dir, review_identity(repository_name, metadata, prompt_text, provider_names), resume)
+                   if state_dir is not None else contextlib.nullcontext(None))
+        with manager as state:
+            if state is not None:
+                self.emit(f"Review checkpoint: {state.path}")
+            try:
+                return self._collect_and_post(repository_name, metadata, provider_names, prompt_text, context, state, collect_only)
+            except (ReviewBridgeError, StateError, OSError) as error:
+                if state is not None:
+                    self.emit(f"Resume with the same PR, providers and prompt: --resume {state.path}")
+                raise
+
+    def _collect_and_post(
+        self, repository_name: str, metadata: PRMetadata, provider_names: Sequence[str],
+        prompt_text: str, context: FailureContext, state: ReviewState | None, collect_only: bool,
+    ) -> list[PostedComment]:
         validated: list[tuple[ProviderSpec, ProviderExecution]] = []
-        context.stage = "detached-worktree setup"
-        with self.repository.detached_worktree(pr_number, metadata.head_sha) as worktree:
-            context.stage = "symlink validation"
-            self.repository.validate_worktree_symlinks(worktree)
-            for provider_name in provider_names:
-                spec = PROVIDER_SPECS[provider_name]
-                adapter = self.adapters[provider_name]
-                self.emit(f"{spec.display_name}: started")
-                stage = "review invocation"
-                try:
-                    raw_execution = adapter.run(worktree, prompt_text)
+        failures: list[str] = []
+        receipts: dict[str, PostedComment] = {}
+        if state is not None and set(state.data["providers"]) - set(provider_names):
+            raise ReviewBridgeError("checkpoint contains an unexpected provider; start a fresh review")
+        for provider_name in provider_names:
+            spec = PROVIDER_SPECS[provider_name]
+            retained = state.data["providers"].get(provider_name, {}) if state is not None else {}
+            if not isinstance(retained, dict):
+                raise ReviewBridgeError("malformed provider checkpoint; start a fresh review")
+            status = retained.get("status")
+            if status not in {None, "running", "failed", "validated", "posting", "posted"}:
+                raise ReviewBridgeError("malformed provider checkpoint status; start a fresh review")
+            if status == "posting":
+                context.posting_started = True
+                raise ReviewBridgeError(f"{spec.display_name} posting outcome is uncertain; inspect GitHub before starting another review; automatic reposting is blocked")
+            if status in {"validated", "posted"}:
+                execution = validate_execution(restore_execution(retained.get("execution")), spec, metadata.number, metadata.head_sha)
+                if status == "posted":
+                    receipt = retained.get("receipt", {})
+                    if (not isinstance(receipt, dict) or not isinstance(receipt.get("comment_id"), int)
+                            or isinstance(receipt.get("comment_id"), bool) or receipt["comment_id"] <= 0
+                            or not isinstance(receipt.get("url"), str) or not receipt["url"].startswith("https://")):
+                        raise ReviewBridgeError("malformed posting receipt; inspect GitHub before retrying")
+                    receipts[provider_name] = PostedComment(provider_name, receipt["comment_id"], receipt["url"])
+                    context.posted_count += 1
+                    context.posting_started = True
+                self.emit(f"{spec.display_name}: retained validated result ({execution.result.verdict})")
+                validated.append((spec, execution))
+                continue
+            stage = "detached-worktree setup"
+            if state is not None:
+                state.record(provider_name, "running")
+            self.emit(f"{spec.display_name}: started")
+            try:
+                # Each provider gets a fresh checkout, including after another failed.
+                with self.repository.detached_worktree(metadata.number, metadata.head_sha) as worktree:
+                    stage = "symlink validation"
+                    self.repository.validate_worktree_symlinks(worktree)
+                    if state is not None and state.path.resolve().is_relative_to(worktree.resolve()):
+                        raise ReviewBridgeError("review checkpoint must be outside the provider checkout")
+                    stage = "review invocation"
+                    raw_execution = self.adapters[provider_name].run(worktree, prompt_text)
                     stage = "review-contract validation"
-                    execution = validate_execution(raw_execution, spec, pr_number, metadata.head_sha)
+                    execution = validate_execution(raw_execution, spec, metadata.number, metadata.head_sha)
                     stage = "dirty-worktree validation"
                     self.repository.assert_clean(worktree, spec.display_name)
-                except ReviewBridgeError as error:
-                    failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, (prompt_text, *prompt_text.splitlines())).error(error)
-                    states = [f"{done.display_name}: validated" for done, _ in validated]
-                    states.append(f"{spec.display_name}: failed during {failure.diagnostic.stage}")
-                    remaining = provider_names[len(validated) + 1:]
-                    states.extend(f"{PROVIDER_SPECS[name].display_name}: skipped because atomic execution aborted" for name in remaining)
-                    detail = f"{failure}; {'; '.join(states)}; posted reviews: none"
-                    raise ReviewAttemptError(detail) from error
-                self.emit(
-                    f"{spec.display_name}: completed ({execution.result.verdict})"
-                )
-                validated.append((spec, execution))
-            context.stage = "detached-worktree cleanup"
-
+                    stage = "detached-worktree cleanup"
+            except ReviewBridgeError as error:
+                failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, (prompt_text, *prompt_text.splitlines())).error(error)
+                detail = str(failure)
+                failures.append(detail)
+                self.emit(detail)
+                if state is not None:
+                    state.record(provider_name, "failed", diagnostic=detail)
+                continue
+            if state is not None:
+                state.record(provider_name, "validated", execution=checkpoint_execution(execution))
+            validated.append((spec, execution))
+            self.emit(f"{spec.display_name}: completed ({execution.result.verdict})")
+        if failures:
+            states = "; ".join(f"{spec.display_name}: validated and retained" if state is not None else f"{spec.display_name}: validated" for spec, _ in validated)
+            posting_state = f"no new reviews posted; {len(receipts)} previously posted comments" if receipts else "posted reviews: none"
+            raise ReviewAttemptError("; ".join(part for part in [*failures, states, posting_state] if part))
         context.stage = "exact-head revalidation"
-        live = self.github.pr_metadata(repository_name, pr_number)
-        if live.state.upper() != "OPEN":
-            raise ReviewBridgeError(
-                f"PR #{pr_number} is no longer open; posting was blocked"
-            )
-        if live.head_sha.lower() != metadata.head_sha.lower():
-            raise ReviewBridgeError(
-                f"PR #{pr_number} head moved from {metadata.head_sha} to {live.head_sha}; "
-                "stale review was not posted"
-            )
-        self.emit(f"Head revalidated: {metadata.head_sha}")
-
+        live = self.github.pr_metadata(repository_name, metadata.number)
+        if (live.number != metadata.number or live.state.upper() != "OPEN"
+                or live.head_sha.lower() != metadata.head_sha.lower()
+                or live.base_sha.lower() != metadata.base_sha.lower()
+                or live.base_ref != metadata.base_ref or live.head_ref != metadata.head_ref):
+            raise ReviewBridgeError("PR head moved, base changed, or PR is no longer open; stale review was not posted")
+        self.emit(f"Head and base revalidated: {metadata.head_sha}")
+        if collect_only:
+            self.emit("All requested reviews validated; collection only, no reviews posted.")
+            return []
         posted: list[PostedComment] = []
         for spec, execution in validated:
+            if spec.key in receipts:
+                posted.append(receipts[spec.key])
+                self.emit(f"{spec.display_name}: already posted {receipts[spec.key].url}")
+                continue
             context.stage = f"{spec.display_name} GitHub posting"
+            if state is not None:
+                state.record(spec.key, "posting", execution=checkpoint_execution(execution))
             context.posting_started = True
-            comment_id, url = self.github.post_comment(
-                repository_name,
-                pr_number,
-                render_comment(spec, metadata, execution),
-            )
+            comment_id, url = self.github.post_comment(repository_name, metadata.number, render_comment(spec, metadata, execution))
             context.posted_count += 1
+            if state is not None:
+                state.record(spec.key, "posted", execution=checkpoint_execution(execution), receipt={"comment_id": comment_id, "url": url})
             self.emit(f"{spec.display_name}: posted {url}")
-            posted.append(
-                PostedComment(provider=spec.key, comment_id=comment_id, url=url)
-            )
+            posted.append(PostedComment(spec.key, comment_id, url))
         return posted
 
 
@@ -2116,6 +2220,10 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument(
         "--prompt-file", type=Path, required=True, help="provider-neutral review request"
     )
+    review.add_argument("--state-dir", type=Path, default=Path(".cache/external-reviews"), help="private local checkpoint directory")
+    review.add_argument("--resume", type=Path, help="resume a matching checkpoint; run only providers without a validated result")
+    review.add_argument("--expected-head", help="require this exact PR head, supplied by review:ready after CI")
+    review.add_argument("--collect-only", action="store_true", help="validate and retain reviews without posting to GitHub")
     return parser
 
 
@@ -2144,7 +2252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             key: ProviderAdapter(spec, runner) for key, spec in PROVIDER_SPECS.items()
         }
         providers = ("claude", "grok") if args.provider == "all" else (args.provider,)
-        ReviewBridge(github, repository, adapters).review(args.pr, providers, prompt)
+        ReviewBridge(github, repository, adapters).review(args.pr, providers, prompt, state_dir=args.state_dir, resume=args.resume, collect_only=args.collect_only, expected_head=args.expected_head)
         return 0
     except ReviewBridgeError as error:
         print(f"error: {redact_sensitive(str(error))}", file=sys.stderr)

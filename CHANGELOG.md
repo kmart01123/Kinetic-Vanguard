@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Made external reviews independently collectible and explicitly resumable: each provider uses a separate clean checkout, validated results survive another provider's failure, and private checkpoints bind reuse to exact PR/prompt/bridge identity. Added collection-only runs, explicit INCOMPLETE outcomes, field-specific finality diagnostics, and posting receipts that prevent automatic duplication after an uncertain write. The CI gate now hands its exact approved SHA to the bridge, while per-adapter checks replace the redundant blanket doctor prerequisite. Required all-provider validation and live head/base revalidation still precede publication.
+
 - Hardened review finality checks for “not yet” and contracted negation while allowing explicitly introduced quoted test fixtures in completed reviews. Preserve diagnostic readability when wrapped prompts contain whitespace-only diff lines without weakening meaningful prompt or secret redaction.
 
 - Reject bare placeholder review fields and explicit unfinished or unperformed review statements, including the two failures observed during PR #143 review. Regressions cover both providers, all review fields, and atomic rejection without suppressing legitimate findings about incomplete product features.

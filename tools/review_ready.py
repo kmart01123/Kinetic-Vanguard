@@ -299,20 +299,6 @@ class ReviewReady:
             )
         return completed
 
-    def check_doctor(self) -> None:
-        completed = self.execute(
-            ("python3", "tools/external_review.py", "doctor"),
-            "external-review doctor",
-        )
-        if completed.returncode != 0:
-            detail = doctor_failure_diagnostic(completed)
-            suffix = f":\n{detail}" if detail else ""
-            raise ReviewReadyError(
-                "external-review doctor failed with exit code "
-                f"{completed.returncode}{suffix}"
-            )
-        self.emit("External-review doctor: healthy")
-
     def repository_root(self) -> Path:
         completed = self.command(
             ("git", "rev-parse", "--show-toplevel"), "repository lookup"
@@ -569,7 +555,7 @@ class ReviewReady:
             completed.stdout, f"GitHub PR #{pr_number} revalidation"
         )
 
-    def run(self) -> str:
+    def run(self, *, resume: Path | None = None) -> str:
         self.repository_root()
         self.assert_clean()
         branch = self.local_branch()
@@ -593,7 +579,6 @@ class ReviewReady:
         self.emit(f"PR: #{before_pr.number}")
         self.emit(f"Exact head: {before_local}")
 
-        self.check_doctor()
         self.wait_for_checks(repository, before_pr)
 
         after_pr = self.refresh_pr(repository, before_pr.number)
@@ -619,6 +604,9 @@ class ReviewReady:
                 "all",
                 "--prompt-file",
                 PROMPT_PATH,
+                "--expected-head",
+                before_pr.head_sha,
+                *(("--resume", str(resume)) if resume is not None else ()),
             ),
             "external reviews",
         )
@@ -629,17 +617,15 @@ class ReviewReady:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(
-        description=(
-            "Wait for current PR checks and run exact-head Claude and Grok reviews"
-        )
-    )
+    parser = argparse.ArgumentParser(description="Wait for current PR checks and run exact-head Claude and Grok reviews")
+    parser.add_argument("--resume", type=Path, help="resume a matching review checkpoint after rechecking CI")
+    return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
     try:
-        ReviewReady(SubprocessRunner(), Path.cwd()).run()
+        ReviewReady(SubprocessRunner(), Path.cwd()).run(resume=args.resume)
         return 0
     except ReviewReadyError as error:
         print(f"error: {error}", file=sys.stderr)
