@@ -6,6 +6,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -292,6 +293,26 @@ class WorkflowTests(unittest.TestCase):
             self.invoke({"claude": replace(execution("claude"), result=result), "grok": execution("grok")})
         self.assertEqual(self.github.comments, [])
         self.assertEqual(len(self.adapters["grok"].prompts), 1)
+
+
+class CaptureTests(unittest.TestCase):
+    def test_cli_output_uses_regular_files_and_preserves_large_stdout_and_stderr(self):
+        script = "import os,stat; print(stat.S_ISREG(os.fstat(1).st_mode)); os.write(1,b'x'*70000); os.write(2,b'y'*70000)"
+        result = bridge.SubprocessRunner().run((sys.executable, "-c", script), timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("True", result.stdout)
+        self.assertEqual(result.stdout.count("x"), 70000)
+        self.assertEqual(result.stderr, "y" * 70000)
+
+    def test_prompt_diff_markers_do_not_destroy_flags_or_failure_diagnostics(self):
+        prompt = "private first line\n-\n+\n{}\n---\n \nprivate second line"
+        message = "Claude lacks --permission-mode; base-to-head check failed"
+        result = bridge.diagnostic_text(message + " private first line", bridge.prompt_redactions(prompt))
+        self.assertIn(message, result)
+        self.assertNotIn("private first line", result)
+        self.assertIn("[REDACTED]", result)
+        # Explicit secrets remain redactions even if they consist of punctuation.
+        self.assertEqual(bridge.diagnostic_text("password !!!", ("!!!",)), "password [REDACTED]")
 
 
 class CheckpointTests(unittest.TestCase):

@@ -248,16 +248,18 @@ class SubprocessRunner:
         timeout: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
         try:
-            return subprocess.run(
-                list(args),
-                cwd=cwd,
-                env=dict(env) if env is not None else None,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
+            # Some CLIs exit before flushing pipe-backed stdout (observed with
+            # Claude --help at ~8 KiB). Private regular files avoid that truncation.
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stdout, \
+                 tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stderr:
+                completed = subprocess.run(
+                    list(args), cwd=cwd, env=dict(env) if env is not None else None,
+                    input=input_text, text=True, stdout=stdout, stderr=stderr,
+                    timeout=timeout, check=False,
+                )
+                stdout.seek(0)
+                stderr.seek(0)
+                return subprocess.CompletedProcess(completed.args, completed.returncode, stdout.read(), stderr.read())
         except FileNotFoundError as error:
             raise ReviewBridgeError(f"required command is unavailable: {args[0]}") from error
         except subprocess.TimeoutExpired as error:
@@ -452,6 +454,12 @@ def resolve_provider_executable(
                 f"{spec.display_name} executable resolves inside the review worktree"
             )
     return resolved, safe_path
+
+
+def prompt_redactions(prompt: str) -> tuple[str, ...]:
+    # Bare diff markers (-, +, braces, etc.) are syntax, not meaningful prompt
+    # lines. Redacting them as substrings destroys CLI flags and diagnostics.
+    return tuple(value for value in (prompt, *prompt.splitlines()) if any(char.isalnum() for char in value))
 
 
 def diagnostic_text(text: str, redactions: Sequence[str] = (), *, limit: int | None = 600) -> str:
@@ -1084,7 +1092,7 @@ class ProviderAdapter:
     def run(self, worktree: Path, prompt: str) -> ProviderExecution:
         source = self.source_environment if self.source_environment is not None else os.environ
         sensitive = tuple(value for key, value in source.items() if re.search(r"token|secret|password|api.?key|auth.?path", key, re.I))
-        context = FailureContext(self.spec.display_name, "executable lookup", (prompt, *prompt.splitlines(), *sensitive))
+        context = FailureContext(self.spec.display_name, "executable lookup", (*prompt_redactions(prompt), *sensitive))
         try:
             return self._run(worktree, prompt, context)
         except ReviewBridgeError as error:
@@ -1863,7 +1871,7 @@ class ReviewBridge:
         state_dir: Path | None = None, resume: Path | None = None, collect_only: bool = False,
         expected_head: str | None = None
     ) -> list[PostedComment]:
-        context = FailureContext("Bridge", "repository context", (prompt, *prompt.splitlines()))
+        context = FailureContext("Bridge", "repository context", prompt_redactions(prompt))
         try:
             return self._review(pr_number, provider_names, prompt, context, state_dir, resume, collect_only, expected_head)
         except ReviewAttemptError:
@@ -1967,7 +1975,7 @@ class ReviewBridge:
                     self.repository.assert_clean(worktree, spec.display_name)
                     stage = "detached-worktree cleanup"
             except ReviewBridgeError as error:
-                failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, (prompt_text, *prompt_text.splitlines())).error(error)
+                failure = error if isinstance(error, DiagnosticError) else FailureContext(spec.display_name, stage, prompt_redactions(prompt_text)).error(error)
                 detail = str(failure)
                 failures.append(detail)
                 self.emit(detail)
