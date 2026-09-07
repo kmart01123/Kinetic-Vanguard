@@ -7,7 +7,7 @@ Kinetic Vanguard is a schema-first, deterministic rules publication for a Fighte
 ## Release status
 
 - Published rules: **[v14.3.0](https://github.com/kmart01123/kinetic-vanguard/releases/tag/v14.3.0)**
-- Current development prototype: **[v14.4.0](https://kmart01123.github.io/kinetic-vanguard/)** — **NON-RELEASE development build**
+- Current development prototype: **[v15.0.0](https://kmart01123.github.io/kinetic-vanguard/)** — **NON-RELEASE development build**
 - Canonical rules authority: `KineticVanguard.yaml`
 
 Published releases use frozen `release/X.Y.Z` branches and annotated `vX.Y.Z` tags.
@@ -19,7 +19,10 @@ Version 14.1.0 restores maintained damage and control benchmark harness source. 
 <!-- BEGIN GENERATED BALANCE MATRICES -->
 ## Balance benchmark snapshot
 
-**Unreleased development snapshot** — canonical rules **v14.4.0**; current published release **v14.3.0**.
+**Retained development snapshot** — canonical rules **v14.4.0**; current published release **v14.3.0**.
+
+The v15.0.0 development line retires Gravitic Press. This snapshot was evaluated on v14.4.0; it is retained because Advanced Training is excluded from the headline benchmark and all retained feature, core, progression, and discipline projections are identical. It is not a new v15.0.0 benchmark run.
+
 
 Target profile: `headline`. The maintained headline benchmark uses 47 creature profiles from SRD 5.2.1 at levels 7, 11, 15, and 20. These are exact analytical full-roster results, with creatures weighted equally within their level.
 
@@ -58,7 +61,7 @@ The Rules Reference retains shared material such as How to Play, Example Play, p
 
 - direct Topic navigation for the authority-derived shared/core inventory;
 - a canonical Name selector that routes individual features to Calculator and shared/system names to Rules Reference;
-- local Show and Level controls for the 34-row Subclass Feature Reference table;
+- local Show and Level controls for the 33-row Subclass Feature Reference table;
 - responsive desktop, tablet, mobile, and print layouts;
 - keyboard, focus, forced-colors, and reduced-motion support.
 
@@ -101,7 +104,7 @@ It writes `artifacts/KineticVanguard.html` with `release_status: release` and no
 
 The build parses restricted YAML 1.2, validates the canonical JSON Schema, performs semantic navigation, classification, authority-coverage, route, text, Name-navigation integrity, and release-identity checks, constructs immutable projections, and emits one release or prototype HTML publication. Failed integrity or coverage checks stop the build rather than producing ceremonial report files.
 
-The top-level onboarding authority is canonical and validated but remains outside the 44 publishable rules entities, Name index, and Rules Reference topic inventory.
+The top-level onboarding authority is canonical and validated but remains outside the 43 publishable rules entities, Name index, and Rules Reference topic inventory.
 
 The maintained Python harnesses consume a deterministic runtime projection emitted by the existing TypeScript YAML loader and semantic validator. Kinetic Vanguard mechanics remain exclusively in YAML; project-authored methodology remains in `harness/config/`; minimal BM/EK third-party comparator parameters remain isolated in `harness/comparators/`; and pinned SRD roster data remains in `harness/data/`.
 

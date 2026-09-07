@@ -10,14 +10,14 @@ const defaultReferenceFragment="#category=common_features&topic=common_features_
 
 test("prototype is self-contained, offline, and unmistakably non-release",async()=>{
   const result=await executeBuild("prototype");const html=await readFile(result.htmlPath,"utf8");
-  assert.match(html,/NON-RELEASE PROTOTYPE/);assert.match(html,/"release_status":"prototype"/);assert.match(html,/<div class="versions"><span>Rules version: 14\.4\.0<\/span><\/div>/);
+  assert.match(html,/NON-RELEASE PROTOTYPE/);assert.match(html,/"release_status":"prototype"/);assert.match(html,/<div class="versions"><span>Rules version: 15\.0\.0<\/span><\/div>/);
   assert.doesNotMatch(html,/<(?:script|link|img)[^>]+(?:src|href)=["']https?:/i);assert.doesNotMatch(html,/(?:fetch|XMLHttpRequest|localStorage|sessionStorage|indexedDB|serviceWorker)/);
   assert.doesNotMatch(html,/<input[^>]+type=["'](?:text|search|number)["']/i);assert.doesNotMatch(html,/<textarea|contenteditable|aria-autocomplete/i);
   assert.doesNotMatch(html,/Application version|application_version|0\.1\.0/);
   const provenanceSource=html.match(/<script type="application\/json" id="publication-provenance">([^<]+)<\/script>/)?.[1];assert.ok(provenanceSource);
   const provenance=JSON.parse(provenanceSource);
   assert.deepEqual(Object.keys(provenance).sort(),["authority_sha256","release_status","rules_version","schema_version"]);
-  assert.equal(provenance.rules_version,"14.4.0");
+  assert.equal(provenance.rules_version,"15.0.0");
 });
 
 test("rendered rules use Tn shorthand headings and preserve cumulative tier order",async()=>{
@@ -39,31 +39,31 @@ test("Subclass Feature Reference filters rows locally from canonical metadata",a
   assert.equal(show.value,"");assert.equal(level.value,"");assert.equal(show.tabIndex,0);assert.equal(level.tabIndex,0);
   assert.equal(document.querySelector('label[for="reference-show"]')?.contains(show),true);assert.equal(document.querySelector('label[for="reference-level"]')?.contains(level),true);
   assert.equal(show.getAttribute("aria-controls"),table.id);assert.equal(level.getAttribute("aria-controls"),table.id);assert.equal(table.getAttribute("aria-describedby"),"reference-filter-count");
-  const rows=[...table.querySelectorAll<HTMLTableRowElement>("tbody tr")],originalRows=[...rows];assert.equal(rows.length,34);
+  const rows=[...table.querySelectorAll<HTMLTableRowElement>("tbody tr")],originalRows=[...rows];assert.equal(rows.length,33);
   const thead=table.tHead,feature=(row:HTMLTableRowElement)=>row.cells[1]!.textContent??"",visible=()=>rows.filter(row=>!row.classList.contains("reference-row--filtered")).map(feature);
-  const expectedGroups:Record<string,string[]>={common_features:["Empathic Sense"],pyrokinesis:["Ember Bolt","Thermal Fracture","Cinder Lance","Flare","Furnace Strike"],cryokinesis:["Glacial Spike","Snow Chains","Frozen Ground","Arctic Tempest","Absolute Zero"],psychokinesis:["Telekinetic Shove","Vectored Thrust","Explosion/Implosion","Telekinetic Slam","Mass Levitation"],electrokinesis:["Static Discharge","Branching Bolt","Electron Burst","Forked Lightning","Ball Lightning"],advanced_training:["Deflection Screen","Phase Step","Advanced Training III choice","Advanced Training IV choice","Advanced Training V choice","Mind Shred","Beguile","Mind Lock","Gravitic Press","Barrier","Improved Phase Step","Overload Mastery II","Inner Reserve"]};
+  const expectedGroups:Record<string,string[]>={common_features:["Empathic Sense"],pyrokinesis:["Ember Bolt","Thermal Fracture","Cinder Lance","Flare","Furnace Strike"],cryokinesis:["Glacial Spike","Snow Chains","Frozen Ground","Arctic Tempest","Absolute Zero"],psychokinesis:["Telekinetic Shove","Vectored Thrust","Explosion/Implosion","Telekinetic Slam","Mass Levitation"],electrokinesis:["Static Discharge","Branching Bolt","Electron Burst","Forked Lightning","Ball Lightning"],advanced_training:["Deflection Screen","Phase Step","Advanced Training III choice","Advanced Training IV choice","Advanced Training V choice","Mind Shred","Beguile","Mind Lock","Barrier","Improved Phase Step","Overload Mastery II","Inner Reserve"]};
   for(const [group,features] of Object.entries(expectedGroups))assert.deepEqual(rows.filter(row=>row.dataset.referenceGroup===group).map(feature),features,group);
   assert.ok(rows.every(row=>row.dataset.referenceGroup&&row.dataset.referenceLevel));for(const choice of ["Advanced Training III choice","Advanced Training IV choice","Advanced Training V choice"])assert.equal(rows.find(row=>feature(row)===choice)?.dataset.referenceEntity,undefined);
   const progressionRows=[...document.querySelectorAll<HTMLTableRowElement>("#entity-subclass_feature_reference table:not(.quick-reference-table) tbody tr")];
   assert.ok(progressionRows.length>0);assert.ok(progressionRows.every(row=>!row.dataset.referenceGroup&&!row.dataset.referenceLevel&&!row.classList.contains("reference-row--filtered")));
   const count=document.querySelector<HTMLElement>("#reference-filter-count")!,noMatches=document.querySelector<HTMLElement>("#reference-filter-no-matches")!,live=document.querySelector<HTMLElement>("#reference-filter-live")!;
-  assert.equal(count.textContent,"Showing 34 of 34 features.");assert.equal(noMatches.hidden,true);
+  assert.equal(count.textContent,"Showing 33 of 33 features.");assert.equal(noMatches.hidden,true);
   assert.equal(live.getAttribute("role"),"status");assert.equal(live.getAttribute("aria-live"),"polite");assert.equal(live.getAttribute("aria-atomic"),"true");
   const globalState=()=>({hash:dom.window.location.hash,history:dom.window.history.length,topic:(document.querySelector("#topic-select") as HTMLSelectElement).value,name:[...document.querySelectorAll<HTMLOptionElement>("#name-select option")].map(option=>[option.value,option.textContent]),obsolete:document.querySelectorAll("#category-select,#facet-controls,#filter-results,#filter-live").length});const globalSnapshot=globalState();
   const change=async(select:HTMLSelectElement,value:string)=>{select.value=value;select.focus();select.dispatchEvent(new dom.window.Event("change",{bubbles:true}));await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(document.activeElement,select);};
   const apply=async(showValue:string,levelValue:string)=>{if(show.value!==showValue)await change(show,showValue);if(level.value!==levelValue)await change(level,levelValue);};
-  for(const [group,features] of Object.entries(expectedGroups)){await apply(group,"");assert.deepEqual(visible(),features);assert.equal(count.textContent,`Showing ${features.length} of 34 features.`);}
+  for(const [group,features] of Object.entries(expectedGroups)){await apply(group,"");assert.deepEqual(visible(),features);assert.equal(count.textContent,`Showing ${features.length} of 33 features.`);}
   await apply("","");assert.deepEqual(visible(),rows.map(feature));
-  const levelCounts:Record<string,number>={"3rd":4,"5th":1,"7th":5,"10th":5,"15th":5,"18th":1,"20th":5,"15th+":7,"18th+":1};
-  for(const [referenceLevel,expected] of Object.entries(levelCounts)){await apply("",referenceLevel);assert.equal(visible().length,expected,referenceLevel);assert.equal(count.textContent,`Showing ${expected} of 34 features.`);}
+  const levelCounts:Record<string,number>={"3rd":4,"5th":1,"7th":5,"10th":5,"15th":5,"18th":1,"20th":5,"15th+":6,"18th+":1};
+  for(const [referenceLevel,expected] of Object.entries(levelCounts)){await apply("",referenceLevel);assert.equal(visible().length,expected,referenceLevel);assert.equal(count.textContent,`Showing ${expected} of 33 features.`);}
   await apply("advanced_training","15th+");
-  assert.deepEqual(visible(),["Mind Shred","Beguile","Mind Lock","Gravitic Press","Barrier","Improved Phase Step","Inner Reserve"]);
-  assert.equal(count.textContent,"Showing 7 of 34 features.");
+  assert.deepEqual(visible(),["Mind Shred","Beguile","Mind Lock","Barrier","Improved Phase Step","Inner Reserve"]);
+  assert.equal(count.textContent,"Showing 6 of 33 features.");
   await apply("common_features","3rd");
-  assert.deepEqual(visible(),[]);assert.equal(count.textContent,"Showing 0 of 34 features.");
-  assert.equal(noMatches.hidden,false);assert.equal(noMatches.textContent,"No features match the selected filters.");assert.equal(live.textContent,"No features match the selected filters. Showing 0 of 34 features.");
+  assert.deepEqual(visible(),[]);assert.equal(count.textContent,"Showing 0 of 33 features.");
+  assert.equal(noMatches.hidden,false);assert.equal(noMatches.textContent,"No features match the selected filters.");assert.equal(live.textContent,"No features match the selected filters. Showing 0 of 33 features.");
   assert.equal(document.activeElement,level);assert.equal(table.tHead,thead);assert.ok(thead?.isConnected);assert.equal(thead?.querySelectorAll("th").length,6);
-  assert.equal(table.querySelectorAll("tbody tr").length,34);assert.ok(originalRows.every((row,index)=>row===table.tBodies[0]!.rows[index]&&row.isConnected));
+  assert.equal(table.querySelectorAll("tbody tr").length,33);assert.ok(originalRows.every((row,index)=>row===table.tBodies[0]!.rows[index]&&row.isConnected));
   assert.deepEqual(globalState(),globalSnapshot);
   const name=document.querySelector<HTMLSelectElement>("#name-select")!;name.value="glacial_spike";name.dispatchEvent(new dom.window.Event("change",{bubbles:true}));
   assert.ok(document.querySelector("#calculator-root"));assert.equal(document.querySelector("#calculator-feature-results > h3")?.textContent,"Glacial Spike");assert.match(dom.window.location.hash,/^#calculator&card=glacial_spike&/u);
@@ -142,12 +142,12 @@ test("feature metadata renders concentration only from structured authority",asy
   const render=(source:string,category:string,topic:string)=>new JSDOM(source,{runScripts:"dangerously",url:`https://local.invalid/KineticVanguard.prototype.html#category=${category}&topic=${topic}`,beforeParse(window:any){window.structuredClone=globalThis.structuredClone;window.CSS={escape:(value:string)=>value};}});
   const metadata=(document:Document,entityId:string)=>{const scope=document.querySelector(`#entity-${entityId}`)??document.querySelector("#calculator-feature-results")!;return [...scope.querySelectorAll<HTMLElement>(".feature-metadata__item")].map(item=>({term:item.querySelector("dt")?.textContent,value:item.querySelector("dd")?.textContent,classes:item.className}));};
 
-  const gravitic=render(html,"advanced_training","advanced_training_advanced_gravitic_press_topic");
-  const graviticMetadata=metadata(gravitic.window.document,"advanced_gravitic_press");
-  assert.ok(graviticMetadata.some(item=>item.term==="Psi"&&item.value==="3"));
-  assert.ok(graviticMetadata.some(item=>item.term==="Activation"&&item.value==="Action"));
-  assert.ok(graviticMetadata.some(item=>item.term==="Requirement"&&item.value==="Concentration"&&item.classes.includes("feature-metadata__item--concentration")));
-  assert.equal(gravitic.window.document.querySelector("#calculator-feature-results .feature-metadata")?.tagName,"DL");
+  const concentrationProbe=render(html,"advanced_training","advanced_training_advanced_barrier_topic");
+  const concentrationProbeMetadata=metadata(concentrationProbe.window.document,"advanced_barrier");
+  assert.ok(concentrationProbeMetadata.some(item=>item.term==="Psi"&&item.value==="3"));
+  assert.ok(concentrationProbeMetadata.some(item=>item.term==="Activation"&&item.value==="Bonus Action"));
+  assert.ok(concentrationProbeMetadata.some(item=>item.term==="Requirement"&&item.value==="Concentration"&&item.classes.includes("feature-metadata__item--concentration")));
+  assert.equal(concentrationProbe.window.document.querySelector("#calculator-feature-results .feature-metadata")?.tagName,"DL");
 
   const levitation=render(html,"psychokinesis","psychokinesis_mass_levitation_topic");
   const levitationMetadata=metadata(levitation.window.document,"mass_levitation");
@@ -171,7 +171,7 @@ test("feature metadata renders concentration only from structured authority",asy
     "Mental Bulwark: You have Advantage on saving throws against being Charmed, Frightened, Blinded, Restrained, Incapacitated, Paralyzed, or Stunned."
   ]);
   for(const [dom,entityId,duration] of [
-    [gravitic,"advanced_gravitic_press","Up to 1 minute"],
+    [concentrationProbe,"advanced_barrier","Varies by tier"],
     [levitation,"mass_levitation","Up to 1 minute"],
     [frozen,"frozen_ground","Up to 1 minute"],
     [vectored,"vectored_thrust","Up to 10 minutes"],
@@ -186,7 +186,7 @@ test("feature metadata renders concentration only from structured authority",asy
   assert.ok(metadata(rider.window.document,"glacial_spike").some(item=>item.term==="Activation"&&item.value==="Declared before roll · Resolves on hit"));
   assert.ok(metadata(manifested.window.document,"common_manifested_strike").some(item=>item.term==="Activation"&&item.value==="Attack action · Replaces an attack"));
   assert.ok(metadata(empathic.window.document,"common_empathic_sense").some(item=>item.term==="Activation"&&item.value==="Passive"));
-  for(const document of [gravitic.window.document,levitation.window.document,rider.window.document,manifested.window.document,empathic.window.document])assert.doesNotMatch(document.querySelector(".feature-metadata")?.textContent??"",/on_hit|bonus_action/);
+  for(const document of [concentrationProbe.window.document,levitation.window.document,rider.window.document,manifested.window.document,empathic.window.document])assert.doesNotMatch(document.querySelector(".feature-metadata")?.textContent??"",/on_hit|bonus_action/);
 
   const slam=render(html,"psychokinesis","psychokinesis_telekinetic_slam_topic");
   const slamMetadata=metadata(slam.window.document,"telekinetic_slam");
@@ -206,7 +206,7 @@ test("feature metadata renders concentration only from structured authority",asy
   const metadataCss=html.match(/\.feature-metadata\{([^}]*)\}/)?.[1]??"";
   assert.doesNotMatch(metadataCss,/(?:^|;)width:/);
   await new Promise<void>(resolve=>setImmediate(resolve));
-  for(const dom of [gravitic,levitation,frozen,vectored,ball,beguile,barrier,rider,manifested,empathic,slam,descriptionOnly])dom.window.close();
+  for(const dom of [concentrationProbe,levitation,frozen,vectored,ball,beguile,barrier,rider,manifested,empathic,slam,descriptionOnly])dom.window.close();
 });
 
 
@@ -412,4 +412,15 @@ test("Name and legacy feature links converge on canonical Calculator routes",asy
   name.value="advanced_beguile";name.dispatchEvent(new reference.window.Event("change",{bubbles:true}));assert.equal(document.querySelector<HTMLElement>("main.layout")?.dataset.view,"calculator");assert.equal(document.querySelector("#calculator-feature-results > h3")?.textContent,"Beguile");assert.match(reference.window.location.hash,/^#calculator&card=advanced_beguile&/u);
   (document.querySelector("#view-rules-reference") as HTMLButtonElement).click();name.value="common_overload";name.dispatchEvent(new reference.window.Event("change",{bubbles:true}));assert.equal(document.querySelector<HTMLElement>("main.layout")?.dataset.view,"reference");assert.ok(document.querySelector("#entity-common_overload"));
   await settleOnboarding();legacy.window.close();reference.window.close();
+});
+
+test("retired Gravitic Press is absent from authority and publication and old links recover",async()=>{
+  const {authority}=await loadAuthority(),result=await executeBuild("prototype"),html=await readFile(result.htmlPath,"utf8");
+  assert.doesNotMatch(JSON.stringify(authority),/advanced_gravitic_press|Gravitic Press/);
+  assert.doesNotMatch(html,/advanced_gravitic_press|Gravitic Press/);
+  for(const fragment of ["#calculator&card=advanced_gravitic_press&level=20&modifier=5&group=advanced_training","#entity=advanced_gravitic_press","#category=advanced_training&topic=advanced_training_advanced_gravitic_press_topic"]){
+    const dom=new JSDOM(html,{runScripts:"dangerously",url:"https://local.invalid/KineticVanguard.prototype.html"+fragment,beforeParse(window:any){installOnboardingBrowserShims(window);}});
+    await settleOnboarding();assert.doesNotMatch(dom.window.location.hash,/advanced_gravitic_press/);
+    assert.ok(dom.window.document.querySelector("#entity-how_to_play")||dom.window.document.querySelector("#calculator-feature-results > h3"));dom.window.close();
+  }
 });

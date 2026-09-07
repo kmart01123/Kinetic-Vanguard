@@ -17,13 +17,14 @@ const readReleaseStatus=(source:string):{published:string;development:string}=>{
   return {published:published[0]!,development:activeDevelopment[0]??"None"};
 };
 
-type BalanceSnapshot={kind:"published";rulesVersion:string}|{kind:"development";rulesVersion:string;publishedVersion:string};
+type BalanceSnapshot={kind:"published";rulesVersion:string}|{kind:"development"|"retained";rulesVersion:string;publishedVersion:string};
 
 const readBalanceSnapshot=(region:string):BalanceSnapshot=>{
-  const lines=[...region.matchAll(/^\*\*(?:Published|Unreleased development) snapshot\*\*.*$/gm)].map(match=>match[0]);assert.equal(lines.length,1);
+  const lines=[...region.matchAll(/^\*\*(?:Published|Unreleased development|Retained development) snapshot\*\*.*$/gm)].map(match=>match[0]);assert.equal(lines.length,1);
   const published=lines[0]!.match(/^\*\*Published snapshot\*\* — canonical rules \*\*v(\d+\.\d+\.\d+)\*\*\.$/);if(published)return {kind:"published",rulesVersion:published[1]!};
-  const development=lines[0]!.match(/^\*\*Unreleased development snapshot\*\* — canonical rules \*\*v(\d+\.\d+\.\d+)\*\*; current published release \*\*v(\d+\.\d+\.\d+)\*\*\.$/);assert.ok(development);
-  return {kind:"development",rulesVersion:development[1]!,publishedVersion:development[2]!};
+  const retained=lines[0]!.startsWith("**Retained development snapshot**");
+  const development=lines[0]!.replace("**Retained development snapshot**","**Unreleased development snapshot**").match(/^\*\*Unreleased development snapshot\*\* — canonical rules \*\*v(\d+\.\d+\.\d+)\*\*; current published release \*\*v(\d+\.\d+\.\d+)\*\*\.$/);assert.ok(development);
+  return {kind:retained?"retained":"development",rulesVersion:development[1]!,publishedVersion:development[2]!};
 };
 
 const assertBalanceSnapshotState=(snapshot:BalanceSnapshot,release:{published:string;development:string},authorityVersion:string):void=>{
@@ -33,7 +34,7 @@ const assertBalanceSnapshotState=(snapshot:BalanceSnapshot,release:{published:st
     else{assert.equal(release.development,`v${authorityVersion}`);assert.ok(compareVersions(snapshot.rulesVersion,authorityVersion)<0);}
     return;
   }
-  assert.notEqual(release.development,"None");assert.equal(release.development,`v${authorityVersion}`);assert.equal(snapshot.rulesVersion,authorityVersion);assert.equal(snapshot.publishedVersion,release.published);
+  assert.notEqual(release.development,"None");assert.equal(release.development,`v${authorityVersion}`);if(snapshot.kind==="retained"){assert.ok(compareVersions(snapshot.rulesVersion,authorityVersion)<0);assert.ok(compareVersions(snapshot.rulesVersion,release.published)>0);}else assert.equal(snapshot.rulesVersion,authorityVersion);assert.equal(snapshot.publishedVersion,release.published);
 };
 
 test("README release status matches canonical development truth",async()=>{
@@ -43,7 +44,7 @@ test("README release status matches canonical development truth",async()=>{
   const occurrences=(value:string):number=>readme.split(value).length-1;
   assert.equal(occurrences("https://kmart01123.github.io/kinetic-vanguard/"),1);
   assert.match(readme,/^- Published rules: \*\*\[v14\.3\.0\]\(https:\/\/github\.com\/kmart01123\/kinetic-vanguard\/releases\/tag\/v14\.3\.0\)\*\*$/m);
-  assert.match(readme,/^- Current development prototype: \*\*\[v14\.4\.0\]\(https:\/\/kmart01123\.github\.io\/kinetic-vanguard\/\)\*\* — \*\*NON-RELEASE development build\*\*$/m);
+  assert.match(readme,/^- Current development prototype: \*\*\[v15\.0\.0\]\(https:\/\/kmart01123\.github\.io\/kinetic-vanguard\/\)\*\* — \*\*NON-RELEASE development build\*\*$/m);
 });
 
 test("README release status accepts one active development prototype",()=>{
@@ -67,6 +68,13 @@ test("balance snapshot identity cannot claim newer authority",()=>{
   assertBalanceSnapshotState(readBalanceSnapshot("**Published snapshot** — canonical rules **v14.2.0**."),{published:"14.2.0",development:"v14.3.0"},"14.3.0");
   assertBalanceSnapshotState(readBalanceSnapshot("**Unreleased development snapshot** — canonical rules **v14.3.0**; current published release **v14.2.0**."),{published:"14.2.0",development:"v14.3.0"},"14.3.0");
   assert.throws(()=>assertBalanceSnapshotState(readBalanceSnapshot("**Published snapshot** — canonical rules **v14.3.0**."),{published:"14.2.0",development:"v14.3.0"},"14.3.0"));
+});
+
+test("retained development evidence stays between published and active rules",()=>{
+  const snapshot=readBalanceSnapshot("**Retained development snapshot** — canonical rules **v14.4.0**; current published release **v14.3.0**.");
+  assertBalanceSnapshotState(snapshot,{published:"14.3.0",development:"v15.0.0"},"15.0.0");
+  assert.throws(()=>assertBalanceSnapshotState(snapshot,{published:"14.3.0",development:"v14.4.0"},"14.4.0"));
+  assert.throws(()=>assertBalanceSnapshotState(snapshot,{published:"14.4.0",development:"v15.0.0"},"15.0.0"));
 });
 
 test("README exposes one structurally valid headline balance snapshot",async()=>{

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Removed
+
+- Retired Gravitic Press from the Advanced Training pool, feature reference, navigation, Calculator, and harness projection following the maintainer's disposition in #133. Other Advanced Training choices and choice-grant levels remain unchanged. Existing users of this option must select a retained option when adopting the new rules.
+
+### Compatibility
+
+- Began the v15.0.0 development line because removal of a published rule is a breaking change under `policy/rules-versioning.md`. This release carries forward the unreleased v14.4 mechanics work; the published v14.3.0 release remains unchanged. The retirement changes the ability inventory without changing the schema or projection shapes.
+
 ### Changed
 
 - Completed the approved v14.4 resolution simplification: Action Surge can activate another eligible standalone psionic Action; Electron Burst uses one 1d8/2d8/3d8 packet for every affected creature; Static Discharge targets up to 2/4/6 total creatures by tier; and Tier-2 feature/rider damage ignores Resistance across all disciplines and Advanced Training without bypassing Immunity or changing the triggering Manifested Strike or Blood Tax.

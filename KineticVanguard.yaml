@@ -41,7 +41,6 @@ audits:
       - advanced_mind_shred
       - advanced_beguile
       - advanced_mind_lock
-      - advanced_gravitic_press
       - advanced_barrier
       - advanced_improved_phase_step
       - advanced_overload_mastery_ii
@@ -1088,8 +1087,6 @@ entities:
             reference_level: 15th+
           - entity_id: advanced_mind_lock
             reference_level: 15th+
-          - entity_id: advanced_gravitic_press
-            reference_level: 15th+
           - entity_id: advanced_barrier
             reference_level: 15th+
           - entity_id: advanced_improved_phase_step
@@ -1406,18 +1403,6 @@ entities:
             - - text: Declared before roll · Resolves on hit
                 type: text
             - - text: Until the end of your next turn
-                type: text
-          - - - text: 15th+
-                type: text
-            - - text: Gravitic Press
-                type: text
-            - - text: Universal (Advanced Training pool)
-                type: text
-            - - text: "3"
-                type: text
-            - - text: Action · Concentration
-                type: text
-            - - text: Concentration, up to 1 minute
                 type: text
           - - - text: 15th+
                 type: text
@@ -5062,164 +5047,6 @@ entities:
     psi_cost: 3
     publishable: true
     title: Mind Lock
-  - activation: action
-    classifications:
-      acquisition_mode: selectable
-      entity_kind: feature
-      feature_role: standalone
-      rules_area:
-        - advanced_training
-    content:
-      - body:
-          - inlines:
-              - text: This effect requires Concentration for up to 1 minute. Create a 15-foot-radius, 20-foot-high Cylinder of intensified gravity centered on a point within 60 feet.
-                type: text
-            type: paragraph
-          - items:
-              - - text: "Terrain and Speed: "
-                  type: strong
-                - text: The area is difficult terrain for the duration, and each creature in it has its Speed halved without a saving throw.
-                  type: text
-              - - text: "Flying creatures: "
-                  type: strong
-                - text: A flying creature that enters the Cylinder or starts its turn there immediately falls, taking falling damage as normal, and cannot fly or gain a fly Speed while it remains there.
-                  type: text
-              - - text: "Saving throw: "
-                  type: strong
-                - text: A creature that enters the Cylinder for the first time on a turn or starts its turn there must make a Strength saving throw.
-                  type: text
-              - - text: "Failed save: "
-                  type: strong
-                - text: On a failed save, it cannot take reactions until the start of its next turn.
-                  type: text
-              - - text: "Successful save: "
-                  type: strong
-                - text: On a successful save, it suffers no additional effect.
-                  type: text
-            style: unordered
-            type: list
-        heading:
-          - text: Base
-            type: text
-        tier: 0
-        type: tier
-      - body:
-          - inlines:
-              - text: "Changes from Tier 0: Creatures in the Cylinder have Disadvantage on attack rolls."
-                type: text
-            type: paragraph
-        heading:
-          - text: Overload
-            type: text
-        tier: 1
-        type: tier
-      - body:
-          - inlines:
-              - text: "Changes from Tier 1: A creature that fails the saving throw also has its Speed reduced to 0 until the start of its next turn."
-                type: text
-            type: paragraph
-        heading:
-          - text: Overload
-            type: text
-        tier: 2
-        type: tier
-    id: advanced_gravitic_press
-    kind: feature
-    level: 15
-    mechanics:
-      surfaces:
-        - id: main
-          delivery:
-            kind: standalone
-            activation: action
-          damage_type: force
-          tiers:
-            - tier: 0
-              targeting:
-                topology: area
-                kind: area
-                shape: cylinder
-                origin: point_within_range
-                radius_feet: 15
-                height_feet: 20
-                placement_range_feet: 60
-                persistent: true
-              steps:
-                - kind: speed_reduction
-                  package_id: control_0
-                  application: while_in_area
-                  duration: while_in_area
-                - kind: saving_throw
-                  ability: strength
-                  failure:
-                    - kind: reaction_denial
-                      package_id: control_1
-                      duration: until_start_next_turn
-            - tier: 1
-              targeting:
-                topology: area
-                kind: area
-                shape: cylinder
-                origin: point_within_range
-                radius_feet: 15
-                height_feet: 20
-                placement_range_feet: 60
-                persistent: true
-              steps:
-                - kind: speed_reduction
-                  package_id: control_0
-                  application: while_in_area
-                  duration: while_in_area
-                - kind: attack_modifier
-                  modifier: disadvantage
-                  scope: all_attacks
-                  package_id: control_0
-                  application: while_in_area
-                  duration: while_in_area
-                - kind: saving_throw
-                  ability: strength
-                  failure:
-                    - kind: reaction_denial
-                      package_id: control_1
-                      duration: until_start_next_turn
-            - tier: 2
-              targeting:
-                topology: area
-                kind: area
-                shape: cylinder
-                origin: point_within_range
-                radius_feet: 15
-                height_feet: 20
-                placement_range_feet: 60
-                persistent: true
-              steps:
-                - kind: speed_reduction
-                  package_id: control_0
-                  application: while_in_area
-                  duration: while_in_area
-                - kind: attack_modifier
-                  modifier: disadvantage
-                  scope: all_attacks
-                  package_id: control_0
-                  application: while_in_area
-                  duration: while_in_area
-                - kind: saving_throw
-                  ability: strength
-                  failure:
-                    - kind: reaction_denial
-                      package_id: control_1
-                      duration: until_start_next_turn
-                    - kind: speed_zero
-                      package_id: control_1
-                      duration: until_start_next_turn
-    presentation_metadata:
-      canonical_topic_by_area: {}
-      primary_rules_area: advanced_training
-    psi_cost: 3
-    publishable: true
-    requires_concentration: true
-    concentration_duration: Up to 1 minute
-    title: Gravitic Press
   - activation: bonus_action
     classifications:
       acquisition_mode: selectable
@@ -5563,7 +5390,7 @@ navigation:
           order: 10
           title: Advanced Training Progression
   default_category_id: common_features
-rules_version: 14.4.0
+rules_version: 15.0.0
 schema_version: 2.9.0
 vocabularies:
   acquisition_modes:
