@@ -12,21 +12,21 @@ An area effect combines `targeting.topology: area` with its independently author
 
 Completed in PR #134; issue [#132](https://github.com/kmart01123/kinetic-vanguard/issues/132) is closed. The separate Phase Step family force/Strength correction landed in PR #137 and issue #136 is also closed.
 
-### Remaining resolution simplification
+### Completed resolution simplification
 
-Implement the approved #135 rules together: normal Action Surge access for standalone psionic Actions, Electron Burst target parity, Static Discharge's 1/3/5 additional-target ladder, class-wide Tier-2 feature/rider resistance penetration, and explicit partial-on-success control. Validate the candidate with fresh damage/control evidence before late-game tuning.
+Implemented the approved rules in [PR #140](https://github.com/kmart01123/kinetic-vanguard/pull/140): normal Action Surge access for standalone psionic Actions, Electron Burst target parity, Static Discharge's 1/3/5 additional-target ladder, class-wide Tier-2 feature/rider resistance penetration, and explicit partial-on-success control. Fresh damage/control evidence validated this baseline before the Apex work.
 
-Tracking: [#135](https://github.com/kmart01123/kinetic-vanguard/issues/135).
+Completed: [#135](https://github.com/kmart01123/kinetic-vanguard/issues/135).
 
 ### Gravitic Press retirement
 
-The maintainer chose retirement. Remove Gravitic Press from the Advanced Training pool, rules publication, and consumer projections. Removing a published option is a breaking change, so the next development rules version is v15.0.0 under the versioning policy.
+The approved retirement in [PR #141](https://github.com/kmart01123/kinetic-vanguard/pull/141) removes Gravitic Press from the Advanced Training pool, rules publication, and consumer projections. Removing this published option begins the unreleased v15.0.0 development line under the versioning policy. All retained feature mechanics remain unchanged.
 
-Tracking: [#133](https://github.com/kmart01123/kinetic-vanguard/issues/133).
+Completed: [#133](https://github.com/kmart01123/kinetic-vanguard/issues/133).
 
 ### Fighter 20 damage scaling
 
-Diagnose the level-20 comparator crossover and subclass scaling by discipline before proposing mechanics. Keep single-target damage findings separate from discipline control tradeoffs, and prefer surgical late-game maturation if a rules change is justified.
+The adopted Apex maturation is implemented in [PR #143](https://github.com/kmart01123/kinetic-vanguard/pull/143). The broader level-20 comparator diagnosis remains open: single-target damage still sits below the comparator interval for some disciplines, and those findings must be considered alongside discipline control tradeoffs.
 
 The maintainer adopted 3d8 Apex for all four disciplines at Fighter 18: cold, fire, force, and lightning respectively. One shared Discipline Maturation procedure preserves normal defenses, no critical doubling, no resource cost, and one use per Attack action. The fresh full benchmark matches the accepted Cryokinesis/Electrokinesis experiment, preserves prior Pyrokinesis/Psychokinesis results, and documents the accepted six-target Electrokinesis increase; see the [evaluation](discipline-apex-evaluation.md). Refined Holdout remains available to every discipline.
 
@@ -34,9 +34,9 @@ Tracking: [#122](https://github.com/kmart01123/kinetic-vanguard/issues/122).
 
 ### External-review diagnostics
 
-Make doctor and provider failures actionable while preserving exact-head validation, atomic posting, isolation, redaction, and fail-closed behavior. This tooling work is independent of subclass mechanics.
+Completed the review-tool changes in [PR #142](https://github.com/kmart01123/kinetic-vanguard/pull/142): actionable diagnostics, independent collection, private resumable checkpoints, native Grok tool IDs, and rejection of explicit CLI errors or interrupted output. Exact-head validation, isolation, and redaction remain enforced. The corrected Grok invocation passed configuration checks; its full live review behavior has not been rerun.
 
-Tracking: [#119](https://github.com/kmart01123/kinetic-vanguard/issues/119).
+Completed: [#119](https://github.com/kmart01123/kinetic-vanguard/issues/119).
 
 ## Completed parking-lot item
 
