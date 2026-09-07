@@ -28,7 +28,7 @@ test("shared progressions and core mechanics are entity-owned without Calculator
   const owners=raw.entities.flatMap((entity:any)=>Object.keys(entity.system_mechanics??{}).map(field=>[field,entity.id]));
   assert.deepEqual(owners.map(([field]:string[])=>field).sort(),[...systemFields].sort());
   const calculator=deriveCalculatorProjection(authority),hydrated=[...systemFields.slice(0,5).map(field=>(calculator as any)[field]),...systemFields.slice(5).map(field=>(calculator.harness_mechanics as any)[field])];
-  assert.equal(hash(hydrated),"dfa09c27779c85c1af19ff8e6d1c81482ece79e870d878be73da3918558cb6df");
+  assert.equal(hash(hydrated),"fd56ab1c696cb3f1af34730a86e73599e60b9c6dc5f390f6b01313995554ed09");
 });
 
 test("every machine-consumed ability authors mechanics once and derives consumer contracts",async()=>{

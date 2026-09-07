@@ -2215,7 +2215,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "Psychokinesis Maturation: At Fighter level 18, once during each Attack action, when you hit a creature with a Manifested Strike, deal an additional 3d8 force damage to that creature. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax."
+          - text: "Discipline Maturation: At Fighter level 18, once during each Attack action, when you hit a creature with a Manifested Strike, deal an additional 3d8 damage to that creature. The damage type is cold for Cryokinesis, fire for Pyrokinesis, force for Psychokinesis, and lightning for Electrokinesis. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax. This packet has no Overload tier: Resistance and Immunity apply normally, even when the strike delivers a Tier-2 rider or uses the Holdout Option."
             type: text
         type: paragraph
       - inlines:
@@ -2240,6 +2240,33 @@ entities:
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
           damage_type: force
+          damage: {kind: dice, count: 3, sides: 8}
+          critical_dice_multiplier: 1
+          psi_cost: 0
+          blood_tax: 0
+        pyrokinesis_manifested_strike_hit:
+          discipline_id: pyrokinesis
+          uses_per_attack_action: 1
+          reset: start_of_each_attack_action
+          damage_type: fire
+          damage: {kind: dice, count: 3, sides: 8}
+          critical_dice_multiplier: 1
+          psi_cost: 0
+          blood_tax: 0
+        cryokinesis_manifested_strike_hit:
+          discipline_id: cryokinesis
+          uses_per_attack_action: 1
+          reset: start_of_each_attack_action
+          damage_type: cold
+          damage: {kind: dice, count: 3, sides: 8}
+          critical_dice_multiplier: 1
+          psi_cost: 0
+          blood_tax: 0
+        electrokinesis_manifested_strike_hit:
+          discipline_id: electrokinesis
+          uses_per_attack_action: 1
+          reset: start_of_each_attack_action
+          damage_type: lightning
           damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
           psi_cost: 0
@@ -5391,7 +5418,7 @@ navigation:
           title: Advanced Training Progression
   default_category_id: common_features
 rules_version: 15.0.0
-schema_version: 2.9.0
+schema_version: 2.11.0
 vocabularies:
   acquisition_modes:
     - id: granted

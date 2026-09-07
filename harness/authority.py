@@ -112,8 +112,11 @@ class AuthorityModel:
         apex = self.projection["core"]["psionic_apex"]
         if level < int(apex["minimum_level"]):
             return None
-        packet = apex["psychokinesis_manifested_strike_hit"]
-        return packet if discipline_id == packet["discipline_id"] else None
+        for field in ("psychokinesis_manifested_strike_hit", "pyrokinesis_manifested_strike_hit", "cryokinesis_manifested_strike_hit", "electrokinesis_manifested_strike_hit"):
+            packet = apex[field]
+            if discipline_id == packet["discipline_id"]:
+                return packet
+        return None
 
     def blood_tax(self, level: int, tier: int) -> int:
         if tier not in {0, 1, 2}:
