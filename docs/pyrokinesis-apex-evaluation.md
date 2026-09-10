@@ -1,5 +1,7 @@
 # Pyrokinesis Apex evaluation
 
+**Historical benchmark:** this evaluation used automatic first-hit maturation. The current rule for all four disciplines requires a pre-roll declaration and spends the use even on a miss. The results below predate that correction and are not validation of the current gamble; see the [corrected benchmark evaluation](maturation-declaration-evaluation.md) and [current damage methodology](../harness/README.md#damage-methodology).
+
 Historical Pyrokinesis-only evaluation. The subsequently adopted Cryokinesis/Electrokinesis packets and current combined results are recorded in the [discipline Apex evaluation](discipline-apex-evaluation.md).
 
 The maintainer selected **3d8 fire**, matching Psychokinesis's Apex dice count. At Fighter 18, once per Attack action, a Manifested Strike hit deals this separate packet to the struck creature. Each new Attack action refreshes it, including Action Surge. It costs no Psi or Blood Tax, does not double on critical hits, and respects Resistance and Immunity even beside a Tier-2 rider or with Holdout.

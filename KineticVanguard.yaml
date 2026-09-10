@@ -2215,7 +2215,7 @@ entities:
             type: text
         type: paragraph
       - inlines:
-          - text: "Discipline Maturation: At Fighter level 18, once during each Attack action, when you hit a creature with a Manifested Strike, deal an additional 3d8 damage to that creature. The damage type is cold for Cryokinesis, fire for Pyrokinesis, force for Psychokinesis, and lightning for Electrokinesis. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax. This packet has no Overload tier: Resistance and Immunity apply normally, even when the strike delivers a Tier-2 rider or uses the Holdout Option."
+          - text: "Discipline Maturation: At Fighter level 18, once during each Attack action, you can declare Discipline Maturation before making a Manifested Strike attack roll. The use is spent when you declare it, even if the attack misses. If that declared attack hits a creature, deal an additional 3d8 damage to that creature. You cannot declare it after seeing the roll or transfer a spent use to a later hit. The damage type is cold for Cryokinesis, fire for Pyrokinesis, force for Psychokinesis, and lightning for Electrokinesis. Each new Attack action grants a new use, including an Attack action from Action Surge. This is a separate feature damage packet, so a critical hit does not double these dice. It costs no Psi and causes no Blood Tax. This packet has no Overload tier: Resistance and Immunity apply normally, even when the strike delivers a Tier-2 rider or uses the Holdout Option."
             type: text
         type: paragraph
       - inlines:
@@ -2239,6 +2239,8 @@ entities:
           discipline_id: psychokinesis
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
+          declaration: before_attack_roll
+          consumption: on_declaration
           damage_type: force
           damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
@@ -2248,6 +2250,8 @@ entities:
           discipline_id: pyrokinesis
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
+          declaration: before_attack_roll
+          consumption: on_declaration
           damage_type: fire
           damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
@@ -2257,6 +2261,8 @@ entities:
           discipline_id: cryokinesis
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
+          declaration: before_attack_roll
+          consumption: on_declaration
           damage_type: cold
           damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
@@ -2266,6 +2272,8 @@ entities:
           discipline_id: electrokinesis
           uses_per_attack_action: 1
           reset: start_of_each_attack_action
+          declaration: before_attack_roll
+          consumption: on_declaration
           damage_type: lightning
           damage: {kind: dice, count: 3, sides: 8}
           critical_dice_multiplier: 1
@@ -2732,15 +2740,15 @@ entities:
         - cryokinesis
     content:
       - inlines:
-          - text: "T0 Base: Choose one creature within 60 feet. The target must make a Constitution saving throw, taking 10d10 cold damage on a failed save, or half on a successful one. On a failed save, the target’s speed becomes 0 until the end of your next turn."
+          - text: "T0 Base: Choose one creature within 60 feet. The target must make a Constitution saving throw, taking 6d10 + 45 cold damage on a failed save, or half the total damage (rounded down) on a successful one. On a failed save, the target’s speed becomes 0 until the end of your next turn."
             type: text
         type: paragraph
       - inlines:
-          - text: "T1 Overload: Changes from Tier 0: Damage increases to 12d10. On a failed save, the target is also Restrained until the end of your next turn."
+          - text: "T1 Overload: Changes from Tier 0: Damage increases to 6d10 + 55. On a failed save, the target is also Restrained until the end of your next turn."
             type: text
         type: paragraph
       - inlines:
-          - text: "T2 Overload: Changes from Tier 1: Damage increases to 14d10. On a failed save, the Stunned condition until the end of your next turn replaces the Restrained condition from Tier 1. The target’s speed becomes 0 even on a successful save."
+          - text: "T2 Overload: Changes from Tier 1: Damage increases to 6d10 + 65. On a failed save, the Stunned condition until the end of your next turn replaces the Restrained condition from Tier 1. The target’s speed becomes 0 even on a successful save."
             type: text
         type: paragraph
     id: absolute_zero
@@ -2767,9 +2775,10 @@ entities:
                     - kind: damage
                       damage_type: cold
                       value:
-                        kind: dice
-                        count: 10
+                        kind: dice_plus_fixed
+                        count: 6
                         sides: 10
+                        fixed: 45
                     - kind: speed_zero
                       package_id: control_0
                       duration: until_end_next_turn
@@ -2786,9 +2795,10 @@ entities:
                     - kind: damage
                       damage_type: cold
                       value:
-                        kind: dice
-                        count: 12
+                        kind: dice_plus_fixed
+                        count: 6
                         sides: 10
+                        fixed: 55
                     - kind: speed_zero
                       package_id: control_0
                       duration: until_end_next_turn
@@ -2812,9 +2822,10 @@ entities:
                     - kind: damage
                       damage_type: cold
                       value:
-                        kind: dice
-                        count: 14
+                        kind: dice_plus_fixed
+                        count: 6
                         sides: 10
+                        fixed: 65
                     - kind: condition
                       condition: stunned
                       package_id: control_1
@@ -3193,7 +3204,7 @@ entities:
           - items:
               - - text: "Damage and saving throw: "
                   type: strong
-                - text: The struck target takes 2 additional force damage, then must make a Strength saving throw.
+                - text: The struck target takes 2 additional force damage, then must make a Strength saving throw. Starting at Fighter level 18, this damage increases to 4 at every tier.
                   type: text
               - - text: "Failed save: "
                   type: strong
@@ -3269,8 +3280,10 @@ entities:
                 - kind: damage
                   damage_type: force
                   value:
-                    kind: fixed
+                    kind: fixed_by_level
                     value: 2
+                    minimum_level: 18
+                    upgraded_value: 4
                 - kind: saving_throw
                   ability: strength
                   failure:
@@ -3286,8 +3299,10 @@ entities:
                 - kind: damage
                   damage_type: force
                   value:
-                    kind: fixed
+                    kind: fixed_by_level
                     value: 2
+                    minimum_level: 18
+                    upgraded_value: 4
                 - kind: saving_throw
                   ability: strength
                   failure:
@@ -3303,8 +3318,10 @@ entities:
                 - kind: damage
                   damage_type: force
                   value:
-                    kind: fixed
+                    kind: fixed_by_level
                     value: 2
+                    minimum_level: 18
+                    upgraded_value: 4
                 - kind: saving_throw
                   ability: strength
                   failure:
@@ -4019,6 +4036,10 @@ entities:
           - text: "T2 Overload: Changes from Tier 1: Replace the limit of two other creatures with up to three other creatures within 15 feet of the struck target. Each additional creature can be chosen only once, and the arc does not continue from it."
             type: text
         type: paragraph
+      - inlines:
+          - text: "Focused Bolt (Fighter level 18): When you declare this rider before the attack roll, you can forgo all additional targets. On a hit, the rider instead deals lightning damage equal to two Manifested Strike dice to the struck target. This option is the same at every tier; unused branches grant no further dice. Its Psi cost, Blood Tax, and damage defenses are unchanged."
+            type: text
+        type: paragraph
     id: branching_bolt
     kind: feature
     level: 7
@@ -4031,6 +4052,16 @@ entities:
             declaration: before_attack_roll
             resolution: manifested_strike_hit
           damage_type: lightning
+          damage_options:
+            - id: focused
+              label: Focused Bolt
+              minimum_level: 18
+              targeting:
+                topology: single
+                kind: struck_target
+              value:
+                kind: manifested_strike_dice
+                count: 2
           tiers:
             - tier: 0
               targeting:
@@ -5418,7 +5449,7 @@ navigation:
           title: Advanced Training Progression
   default_category_id: common_features
 rules_version: 15.0.0
-schema_version: 2.11.0
+schema_version: 2.13.0
 vocabularies:
   acquisition_modes:
     - id: granted

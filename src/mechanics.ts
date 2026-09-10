@@ -21,6 +21,7 @@ function locateSteps(steps:MechanicsStep[],gate:Gate="on_reach",save?:Calculator
 const tierSteps=(tier:MechanicsTier):LocatedStep[]=>[...locateSteps(tier.steps??[]),...(tier.events??[]).flatMap(event=>locateSteps(event.steps))];
 
 function mechanicsDamage(value:MechanicsValue,resolution:CalculatorDamage["resolution"]):CalculatorDamage{
+  if(value.kind==="dice_plus_fixed"||value.kind==="fixed_by_level")return{...value,resolution};
   if(value.kind==="fixed")return{kind:"fixed",resolution,value:value.value};
   if(value.kind==="dice")return{kind:"dice",resolution,count:value.count,sides:value.sides};
   if(value.kind==="manifested_strike_dice")return{kind:"manifested_strike_dice",resolution,count:value.count};
@@ -77,8 +78,8 @@ function calculatorMetrics(surfaces:MechanicsSurface[]):CalculatorMetric[]{
 }
 
 export function projectCalculatorMechanics(entity:Entity):CalculatorFeature|null{
-  if(!entity.mechanics)return null;const surfaces=entity.mechanics.surfaces,tiers=surfaces.flatMap(surface=>surface.tiers??[]).sort((left,right)=>left.tier-right.tier),metrics=calculatorMetrics(surfaces);
-  return {entity_id:entity.id,delivery:calculatorDelivery(surfaces),...(metrics.length?{metrics}:{}),...(tiers.length?{tiers:tiers.map(calculatorTier)}:{})};
+  if(!entity.mechanics)return null;const surfaces=entity.mechanics.surfaces,tiers=surfaces.flatMap(surface=>(surface.tiers??[]).map(tier=>({surface,tier}))).sort((left,right)=>left.tier.tier-right.tier.tier),metrics=calculatorMetrics(surfaces);
+  return {entity_id:entity.id,delivery:calculatorDelivery(surfaces),...(metrics.length?{metrics}:{}),...(tiers.length?{tiers:tiers.map(({surface,tier})=>({...calculatorTier(tier),...(surface.damage_options?{damage_options:surface.damage_options.map(option=>({id:option.id,label:option.label,minimum_level:option.minimum_level,target_count:1 as const,damage:mechanicsDamage(option.value,"always")}))}:{})}))}:{})};
 }
 
 function harnessDuration(duration:Extract<MechanicsStep,{kind:"speed_modifier"|"speed_zero"|"speed_reduction"|"condition"|"reaction_denial"|"attack_modifier"}>["duration"]):HarnessControlEffect["duration"]{

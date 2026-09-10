@@ -1,5 +1,7 @@
 # Discipline Apex evaluation
 
+**Historical benchmark:** this evaluation used automatic first-hit maturation. The current rule for all four disciplines requires a pre-roll declaration and spends the use even on a miss. The results below predate that correction and are not validation of the current gamble; see the [corrected benchmark evaluation](maturation-declaration-evaluation.md) and [current damage methodology](../harness/README.md#damage-methodology).
+
 The maintainer adopted **3d8 Apex damage for all four disciplines** at Fighter 18, retaining the tested Cryokinesis and Electrokinesis additions alongside Pyrokinesis and the existing Psychokinesis packet. A shared Discipline Maturation procedure deals cold for Cryokinesis, fire for Pyrokinesis, force for Psychokinesis, and lightning for Electrokinesis, once during each Attack action when a Manifested Strike hits. Only the struck creature takes the packet; each new Attack action refreshes its use, including Action Surge.
 
 The packet costs no Psi or Blood Tax, does not double on a critical hit, and retains normal Resistance and Immunity even beside a Tier-2 rider or with Holdout. It has no Overload tier. Refined Holdout remains available to all four disciplines. Rules remain unreleased v15.0.0; schema is 2.11.0 and harness projection is 1.7.0.

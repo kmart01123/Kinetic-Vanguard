@@ -59,9 +59,9 @@ class AuthorityProjectionTests(unittest.TestCase):
 
     def test_real_root_authority_and_complete_stable_id_inventory(self)->None:
         self.assertEqual(Path(self.model.projection["authority_path"]),DEFAULT_AUTHORITY)
-        self.assertEqual(self.model.projection["projection_version"],"1.7.0")
+        self.assertEqual(self.model.projection["projection_version"],"1.9.0")
         self.assertEqual(self.model.rules_version,"15.0.0")
-        self.assertEqual(self.model.projection["schema_version"],"2.11.0")
+        self.assertEqual(self.model.projection["schema_version"],"2.13.0")
         self.assertEqual(self.model.projection["core"]["action_economy"],{"standalone_psionic_action_limit_per_turn":None,"action_surge_allows_additional_standalone_psionic_action":True})
         self.assertEqual(self.model.holdout_formula(17)["kind"],"halve_total_rounded_down")
         self.assertEqual(self.model.holdout_formula(18),{"minimum_level":18,"maximum_level":20,"kind":"dice_plus_psionic_ability_modifier","count":1,"sides":6})
@@ -947,12 +947,12 @@ class DamagePlannerTests(unittest.TestCase):
 
     def test_combat_prowess_hit_instead_does_not_establish_studied(self)->None:
         planner=self.planner(1);package_index=1
-        result=planner._resolve_attack_roll(0,0,0,0,False,package_index,0,"miss",True,0,0,0,0,2,False,0)
+        result=planner._resolve_attack_roll(0,0,0,0,False,package_index,0,"miss",True,0,0,0,0,2,False,0,False)
         self.assertEqual(result.choice[:5],("prowess",False,False,False,0))
 
     def test_combat_prowess_can_be_retained_for_a_more_valuable_later_attack(self)->None:
         planner=self.planner(2)
-        result=planner._resolve_attack_roll(0,0,1,0,False,0,0,"miss",True,0,0,0,0,2,False,0)
+        result=planner._resolve_attack_roll(0,0,1,0,False,0,0,"miss",True,0,0,0,0,2,False,0,False)
         self.assertEqual(result.choice[:5],("miss",True,False,True,0))
         self.assertAlmostEqual(result.score.aggregate,101.0975,places=12)
 
@@ -1017,7 +1017,7 @@ class DamagePlannerTests(unittest.TestCase):
     def test_repeated_thermal_fracture_uses_max_or_refresh_not_addition(self)->None:
         target=replace(self.base,ac=1,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());thermal=Package("thermal_fracture",0,0,0)
         planner=_KVDamagePlanner(self.model,target,(thermal,),{thermal:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,2,(1,),False,False,0,0,self.mastery,0,1,None);self.addCleanup(planner.clear)
-        self.assertEqual(planner._roll_options(0,0,"hit",False,False,1)[0][4],1)
+        self.assertEqual(planner._roll_options(0,0,"hit",False,False,1,False)[0][4],1)
 
     def test_refined_holdout_uses_1d6_plus_full_modifier_and_full_graze(self)->None:
         target=replace(self.base,damage_resistances=frozenset(),damage_immunities=frozenset({"fire"}),damage_vulnerabilities=frozenset())
@@ -1029,13 +1029,13 @@ class DamagePlannerTests(unittest.TestCase):
     def test_psychokinesis_apex_packet_is_once_per_attack_action_and_action_surge_refreshes_it(self)->None:
         target=replace(self.base,ac=1,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());package=Package(None,0,0,0);packet=_psionic_apex_packet(self.model,target,"psychokinesis",20)
         planner=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,4,(2,),False,False,0,0,self.mastery,0,1,packet);self.addCleanup(planner.clear)
-        once=packet*(1-0.05**4)
+        once=packet*0.95
         self.assertAlmostEqual(planner.solve().primary,2*once,places=12)
-        hit=planner._roll_options(0,0,"hit",True,False,0)[0];critical=planner._roll_options(0,0,"critical",True,False,0)[0]
+        hit=planner._roll_options(0,0,"hit",True,False,0,True)[0];critical=planner._roll_options(0,0,"critical",True,False,0,True)[0]
         self.assertFalse(hit[2]);self.assertEqual(hit[-2:],critical[-2:]);self.assertEqual(hit[-1],packet)
         immune=replace(target,damage_immunities=frozenset({"force"}));immune_packet=_psionic_apex_packet(self.model,immune,"psychokinesis",20);self.assertEqual(immune_packet,0.0)
         immune_planner=_KVDamagePlanner(self.model,immune,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,1,(1,),False,False,0,0,self.mastery,0,1,immune_packet);self.addCleanup(immune_planner.clear)
-        immune_hit=immune_planner._roll_options(0,0,"hit",True,False,0)[0];self.assertFalse(immune_hit[2]);self.assertEqual(immune_hit[-1],0.0)
+        immune_hit=immune_planner._roll_options(0,0,"hit",True,False,0,True)[0];self.assertFalse(immune_hit[2]);self.assertEqual(immune_hit[-1],0.0)
 
     def test_discipline_apex_respects_defenses_and_refreshes_only_on_attack_actions(self)->None:
         for discipline,damage_type in (("cryokinesis","cold"),("pyrokinesis","fire"),("psychokinesis","force"),("electrokinesis","lightning")):
@@ -1051,14 +1051,47 @@ class DamagePlannerTests(unittest.TestCase):
                 self.assertTrue(self.model.projection["core"]["overload"]["tier_two_damage_ignores_resistance"])
                 packet=_psionic_apex_packet(self.model,resistant,discipline,20)
                 planner=_KVDamagePlanner(self.model,resistant,(package,),{package:(0.0,0.0)},(("holdout",(0.0,0.0,0.0)),),((),),0,4,(2,),False,False,0,0,self.mastery,0,None,packet);self.addCleanup(planner.clear)
-                self.assertAlmostEqual(planner.solve().primary,2*packet*(1-0.05**4),places=12)
+                self.assertAlmostEqual(planner.solve().primary,2*packet*0.95,places=12)
                 self.assertEqual(planner.solve().aggregate,planner.solve().primary)
-                hit=planner._roll_options(0,0,"hit",True,False,0)[0];critical=planner._roll_options(0,0,"critical",True,False,0)[0]
+                hit=planner._roll_options(0,0,"hit",True,False,0,True)[0];critical=planner._roll_options(0,0,"critical",True,False,0,True)[0]
                 self.assertFalse(hit[2]);self.assertEqual(hit[-2:],critical[-2:]);self.assertEqual(hit[-1],6.5)
                 # A standalone occupying the only action cannot deliver Apex damage.
                 standalone=Standalone("test_standalone",0,0,0,100.0,600.0,False)
                 action=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((standalone,),),0,4,(1,),False,False,0,0,self.mastery,0,None,13.5);self.addCleanup(action.clear)
                 self.assertEqual(action.solve().primary,100.0);self.assertEqual(action.solve().aggregate,600.0)
+
+    def test_all_discipline_apex_declarations_gamble_on_one_roll_without_hit_retries(self)->None:
+        target=replace(self.base,ac=11,damage_resistances=frozenset(),damage_immunities=frozenset(),damage_vulnerabilities=frozenset());package=Package(None,0,0,0)
+        for discipline in ("cryokinesis","pyrokinesis","psychokinesis","electrokinesis"):
+            with self.subTest(discipline=discipline):
+                packet=_psionic_apex_packet(self.model,target,discipline,18)
+                planner=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,4,(2,),False,False,0,0,self.mastery,0,None,packet);self.addCleanup(planner.clear)
+                # Two Attack actions, each with a single 50% gamble, not four retries.
+                self.assertAlmostEqual(planner.solve().primary,2*0.5*packet,places=12)
+                self.assertEqual(planner.selection().count("discipline_maturation"),2)
+                miss=planner._roll_options(0,0,"miss",True,False,0,True)[0]
+                self.assertFalse(miss[2]);self.assertEqual(miss[-2:],(0.0,0.0))
+                later_hit=planner._roll_options(0,0,"hit",miss[2],False,0,False)[0]
+                self.assertEqual(later_hit[-2:],(0.0,0.0))
+                with self.assertRaises(ValueError):planner._roll_options(0,0,"hit",False,False,0,True)
+                for outcome in ("miss","hit","critical"):
+                    undeclared=planner._roll_options(0,0,outcome,True,False,0,False)[0]
+                    self.assertTrue(undeclared[2]);self.assertEqual(undeclared[-2:],(0.0,0.0))
+                converted=planner._roll_options(0,0,"miss",True,True,0,True)[1]
+                self.assertEqual(converted[0],"prowess");self.assertFalse(converted[2]);self.assertEqual(converted[-2:],(packet,packet))
+                uncommitted=planner._roll_options(0,0,"miss",True,True,0,False)[1]
+                self.assertTrue(uncommitted[2]);self.assertEqual(uncommitted[-2:],(0.0,0.0))
+
+    def test_apex_can_defer_until_observed_studied_advantage_before_declaring(self)->None:
+        target=replace(self.base,ac=11);package=Package(None,0,0,0)
+        planner=_KVDamagePlanner(self.model,target,(package,),{package:(0.0,0.0)},(("normal",(0.0,0.0,0.0)),),((),),0,2,(1,),True,False,0,0,self.mastery,0,None,13.5);self.addCleanup(planner.clear)
+        # Defer the first roll: its miss grants a 75% second-roll chance, its hit leaves 50%.
+        first=planner._attacks(0,0,2,0,True,False,False,0,0,0,0,2,False,0)
+        self.assertFalse(first.choice[-1])
+        self.assertAlmostEqual(planner.solve().primary,13.5*(0.5*0.75+0.5*0.5),places=12)
+        for studied in (False,True):
+            last=planner._attacks(0,0,1,0,True,studied,False,0,0,0,0,2,False,0)
+            self.assertTrue(last.choice[-1])
 
 
     def test_area_damage_uses_approved_uniform_electron_packet(self)->None:
@@ -1094,8 +1127,9 @@ class DamagePlannerTests(unittest.TestCase):
     def test_observed_state_policy_matches_current_l20_sentinel(self)->None:
         target=next(item for item in load_targets(profile="headline",levels={20}) if item.name=="Ancient White Dragon")
         primary,aggregate,selection,_schedule=_kv_dpr(self.model,self.config,target,"electrokinesis",3)
-        self.assertAlmostEqual(primary,129.6422194614418,places=10)
-        self.assertAlmostEqual(aggregate,184.02261097609536,places=10)
+        self.assertAlmostEqual(primary,131.26829889795067,places=10)
+        self.assertAlmostEqual(aggregate,183.63078228530074,places=10)
+        self.assertIn("branching_bolt@focused:T0",selection)
         self.assertIn("electron_burst:T2",selection)
         self.assertTrue(selection.endswith("|representative=locally-modal-path|policy=observed-state-adaptive"))
 

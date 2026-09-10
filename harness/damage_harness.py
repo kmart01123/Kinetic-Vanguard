@@ -19,7 +19,7 @@ from .model import DEFAULT_CATALOG,DEFAULT_COMPARATORS,DEFAULT_CONFIG,DEFAULT_PR
 
 @dataclass(frozen=True)
 class Package:
-    entity_id:str|None;tier:int;psi:int;blood:int
+    entity_id:str|None;tier:int;psi:int;blood:int;mode:str|None=None
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,10 @@ def _cluster_signature(model:AuthorityModel,config:dict[str,Any],discipline_id:s
         if rule.get("requires_additional_target") and cluster_size<2:continue
         for tier_row in rule["damage_tiers"]:
             tier=int(tier_row["tier"])
-            if level>=tier_minimum[tier]:signature.append((str(rule["entity_id"]),tier,_target_count(rule,tier,cluster_size,pb)))
+            if level>=tier_minimum[tier]:
+                signature.append((str(rule["entity_id"]),tier,_target_count(rule,tier,cluster_size,pb)))
+                for option in tier_row.get("damage_options",[]):
+                    if level>=int(option["minimum_level"]):signature.append((f"{rule['entity_id']}@{option['id']}",tier,min(cluster_size,int(option["target_count"]))))
     return tuple(signature)
 
 
@@ -77,6 +80,7 @@ def _raw_distribution(damage:dict[str,Any],strike_die:int,psi_modifier:int)->dic
     kind=damage["kind"]
     if kind=="none":return {0:1.0}
     if kind=="fixed":return {int(damage["value"]):1.0}
+    if kind=="dice_plus_fixed":return {value+int(damage["fixed"]):probability for value,probability in _die_distribution(int(damage["count"]),int(damage["sides"])).items()}
     if kind=="dice":return _die_distribution(int(damage["count"]),int(damage["sides"]))
     if kind=="manifested_strike_dice":return _die_distribution(int(damage["count"]),strike_die)
     if kind=="psionic_ability_modifier":return {psi_modifier*int(damage.get("multiplier",1)):1.0}
@@ -129,7 +133,7 @@ def _psionic_apex_packet(model:AuthorityModel,target:Target,discipline_id:str,le
     expected={"psychokinesis":("force",3),"pyrokinesis":("fire",3),"cryokinesis":("cold",3),"electrokinesis":("lightning",3)}
     if discipline_id not in expected:raise ValueError("Unsupported canonical Psionic Apex discipline")
     damage_type,count=expected[discipline_id]
-    if packet!={"discipline_id":discipline_id,"uses_per_attack_action":1,"reset":"start_of_each_attack_action","damage_type":damage_type,"damage":{"kind":"dice","count":count,"sides":8},"critical_dice_multiplier":1,"psi_cost":0,"blood_tax":0}:raise ValueError("Unsupported canonical Psionic Apex strike packet")
+    if packet!={"discipline_id":discipline_id,"uses_per_attack_action":1,"reset":"start_of_each_attack_action","declaration":"before_attack_roll","consumption":"on_declaration","damage_type":damage_type,"damage":{"kind":"dice","count":count,"sides":8},"critical_dice_multiplier":1,"psi_cost":0,"blood_tax":0}:raise ValueError("Unsupported canonical Psionic Apex strike packet")
     damage=packet["damage"]
     return sum(probability*_profile_damage(target,packet["damage_type"],roll) for roll,probability in _die_distribution(int(damage["count"]),int(damage["sides"])).items())
 
@@ -137,13 +141,21 @@ def _psionic_apex_packet(model:AuthorityModel,target:Target,discipline_id:str,le
 def _rider_values(model:AuthorityModel,target:Target,discipline_id:str,cluster_size:int,level:int,pb:int,psi_modifier:int,strike_die:int,package:Package)->tuple[float,float]:
     if package.entity_id is None:return 0.0,0.0
     rule=model.features[package.entity_id];tier_row=next(item for item in rule["damage_tiers"] if int(item["tier"])==package.tier);damage_type=rule["damage_type"]
+    count=_target_count(rule,package.tier,cluster_size,pb)
+    if package.mode is not None:
+        option=next((item for item in tier_row.get("damage_options",[]) if item["id"]==package.mode),None)
+        if option is None or level<int(option["minimum_level"]):raise ValueError("Unavailable rider damage option")
+        tier_row={"damage":option["damage"]};count=min(cluster_size,int(option["target_count"]))
+    def damage_at_level(damage):
+        if damage["kind"]=="fixed_by_level":return {"kind":"fixed","resolution":damage["resolution"],"value":damage["upgraded_value"] if level>=int(damage["minimum_level"]) else damage["value"]}
+        return damage
     if not isinstance(damage_type,str):raise ValueError(f"Unsupported canonical feature damage type: {damage_type}")
     save=tier_row.get("save");save_probability=None
     if save:
         save=_resolve_feature_save(save)
         save_probability=save_success_probability(target,save,model.kv_save_dc(level,psi_modifier))
-    ignore=package.tier in rule.get("ignore_resistance_tiers",[]);primary=_rule_damage(target,tier_row["damage"],damage_type,strike_die,psi_modifier,save_probability,ignore)
-    count=_target_count(rule,package.tier,cluster_size,pb);secondary_damage=tier_row.get("secondary_damage",tier_row["damage"]);secondary=_rule_damage(target,secondary_damage,damage_type,strike_die,psi_modifier,save_probability,ignore)
+    ignore=package.tier in rule.get("ignore_resistance_tiers",[]);primary=_rule_damage(target,damage_at_level(tier_row["damage"]),damage_type,strike_die,psi_modifier,save_probability,ignore)
+    secondary_damage=tier_row.get("secondary_damage",tier_row["damage"]);secondary=_rule_damage(target,damage_at_level(secondary_damage),damage_type,strike_die,psi_modifier,save_probability,ignore)
     return primary,primary+max(0,count-1)*secondary
 
 
@@ -204,19 +216,22 @@ class _KVDamagePlanner:
             self._roll_probability_cache[key]=tuple((outcome,probabilities[outcome]) for outcome in ("miss","hit","critical") if probabilities[outcome])
         return self._roll_probability_cache[key]
 
-    def _roll_options(self,package_index:int,strike_index:int,outcome:str,apex_available:bool,prowess:bool,ac_reduction:int)->tuple[tuple[str,bool,bool,bool,int,float,float],...]:
+    def _roll_options(self,package_index:int,strike_index:int,outcome:str,apex_available:bool,prowess:bool,ac_reduction:int,apex_declared:bool)->tuple[tuple[str,bool,bool,bool,int,float,float],...]:
+        if apex_declared and not apex_available:raise ValueError("Discipline Maturation is unavailable for this declaration")
+        next_apex=apex_available and not apex_declared
+        apex=float(self.apex_packet) if apex_declared else 0.0
         package=self.packages[package_index];strike=self.strike_options[strike_index][1];rider_primary,rider_aggregate=self.rider_values[package];fracture=self.fractures[package_index]
         if outcome!="miss":
-            packet=strike[2 if outcome=="critical" else 1];apex=float(self.apex_packet) if apex_available else 0.0
-            return ((outcome,False,False,prowess,max(ac_reduction,fracture),packet+rider_primary+apex,packet+rider_aggregate+apex),)
-        options=[("miss",self.studied_enabled,apex_available,prowess,ac_reduction,strike[0],strike[0])]
+            packet=strike[2 if outcome=="critical" else 1]
+            return ((outcome,False,next_apex,prowess,max(ac_reduction,fracture),packet+rider_primary+apex,packet+rider_aggregate+apex),)
+        options=[("miss",self.studied_enabled,next_apex,prowess,ac_reduction,strike[0],strike[0])]
         if prowess:
-            apex=float(self.apex_packet) if apex_available else 0.0;options.append(("prowess",False,False,False,max(ac_reduction,fracture),strike[1]+rider_primary+apex,strike[1]+rider_aggregate+apex))
+            options.append(("prowess",False,next_apex,False,max(ac_reduction,fracture),strike[1]+rider_primary+apex,strike[1]+rider_aggregate+apex))
         return tuple(options)
 
-    def _resolve_attack_roll(self,round_index:int,action_slots_after:int,attacks_left_after:int,tier_twos:int,apex_available:bool,package_index:int,strike_index:int,outcome:str,prowess:bool,ac_reduction:int,psi:int,blood:int,mastery_remaining:int,mastery_mode:int,zone_active:bool,standalone_count:int)->_Decision:
+    def _resolve_attack_roll(self,round_index:int,action_slots_after:int,attacks_left_after:int,tier_twos:int,apex_available:bool,package_index:int,strike_index:int,outcome:str,prowess:bool,ac_reduction:int,psi:int,blood:int,mastery_remaining:int,mastery_mode:int,zone_active:bool,standalone_count:int,apex_declared:bool)->_Decision:
         best=None
-        for resolution,next_studied,next_apex,next_prowess,next_reduction,primary,aggregate in self._roll_options(package_index,strike_index,outcome,apex_available,prowess,ac_reduction):
+        for resolution,next_studied,next_apex,next_prowess,next_reduction,primary,aggregate in self._roll_options(package_index,strike_index,outcome,apex_available,prowess,ac_reduction,apex_declared):
             continuation=self._attacks(round_index,action_slots_after,attacks_left_after,tier_twos,next_apex,next_studied,next_prowess,next_reduction,psi,blood,mastery_remaining,mastery_mode,zone_active,standalone_count)
             candidate=_Decision(_Score(primary+continuation.score.primary,aggregate+continuation.score.aggregate),(resolution,next_studied,next_apex,next_prowess,next_reduction,primary,aggregate))
             if self._better(candidate,best):best=candidate
@@ -238,12 +253,14 @@ class _KVDamagePlanner:
                 for tax,next_mastery,next_mode,activated in self._payment_options(package.blood,mastery_remaining,mastery_mode):
                     next_blood=blood+tax
                     if next_blood>self.blood_budget:continue
-                    primary=aggregate=0.0
-                    for outcome,probability in self._roll_probabilities(studied,ac_reduction):
-                        resolution=self._resolve_attack_roll(round_index,action_slots_after,attacks_left-1,next_tier_twos,apex_available,package_index,strike_index,outcome,prowess,ac_reduction,next_psi,next_blood,next_mastery,next_mode,zone_active,standalone_count)
-                        primary+=probability*resolution.score.primary;aggregate+=probability*resolution.score.aggregate
-                    candidate=_Decision(_Score(primary,aggregate),("strike",package_index,strike_index,tax,next_mastery,next_mode,activated))
-                    if self._better(candidate,best):best=candidate
+                    # Commit or defer before enumerating unobserved attack outcomes.
+                    for apex_declared in ((True,False) if apex_available else (False,)):
+                        primary=aggregate=0.0
+                        for outcome,probability in self._roll_probabilities(studied,ac_reduction):
+                            resolution=self._resolve_attack_roll(round_index,action_slots_after,attacks_left-1,next_tier_twos,apex_available,package_index,strike_index,outcome,prowess,ac_reduction,next_psi,next_blood,next_mastery,next_mode,zone_active,standalone_count,apex_declared)
+                            primary+=probability*resolution.score.primary;aggregate+=probability*resolution.score.aggregate
+                        candidate=_Decision(_Score(primary,aggregate),("strike",package_index,strike_index,tax,next_mastery,next_mode,activated,apex_declared))
+                        if self._better(candidate,best):best=candidate
         if best is None:raise RuntimeError("No legal Manifested Strike declaration")
         return best
 
@@ -261,14 +278,15 @@ class _KVDamagePlanner:
                 labels=[];tier_twos=0;apex_available=self.apex_packet is not None
                 for attacks_left in range(self.attacks_per_action,0,-1):
                     declaration=self._attacks(round_index,slots-1,attacks_left,tier_twos,apex_available,studied,prowess,ac_reduction,psi,blood,mastery_remaining,mastery_mode,zone_active,standalone_count)
-                    _,package_index,strike_index,tax,mastery_remaining,mastery_mode,activated=declaration.choice;package=self.packages[package_index];psi+=package.psi;blood+=tax;tier_twos+=int(package.tier==2);mastery_activated=mastery_activated or activated
+                    _,package_index,strike_index,tax,mastery_remaining,mastery_mode,activated,apex_declared=declaration.choice;package=self.packages[package_index];psi+=package.psi;blood+=tax;tier_twos+=int(package.tier==2);mastery_activated=mastery_activated or activated
                     grouped:dict[tuple[Any,...],float]=defaultdict(float)
                     for outcome,probability in self._roll_probabilities(studied,ac_reduction):
-                        resolution=self._resolve_attack_roll(round_index,slots-1,attacks_left-1,tier_twos,apex_available,package_index,strike_index,outcome,prowess,ac_reduction,psi,blood,mastery_remaining,mastery_mode,zone_active,standalone_count)
+                        resolution=self._resolve_attack_roll(round_index,slots-1,attacks_left-1,tier_twos,apex_available,package_index,strike_index,outcome,prowess,ac_reduction,psi,blood,mastery_remaining,mastery_mode,zone_active,standalone_count,apex_declared)
                         grouped[resolution.choice]+=probability
                     resolved=sorted(grouped.items(),key=lambda item:(-item[1],repr(item[0])))[0][0];_,studied,apex_available,prowess,ac_reduction,_,_=resolved
-                    if package.entity_id:labels.append(f"{package.entity_id}:T{package.tier}")
+                    if package.entity_id:labels.append(f"{package.entity_id}{'@'+package.mode if package.mode else ''}:T{package.tier}")
                     elif self.strike_options[strike_index][0]!="normal":labels.append(f"manifested_strike@{self.strike_options[strike_index][0]}")
+                    if apex_declared:labels.append("discipline_maturation")
                 entries.append("attack("+(";".join(labels) if labels else "manifested_strike")+")");attacked=True;slots-=1
             if not attacked:studied=False
             marker=";mastery" if mastery_activated else "";rounds.append(f"R{round_index+1}[{','.join(entries)}{marker}]")
@@ -306,7 +324,10 @@ def _kv_dpr_for_schedule(model:AuthorityModel,config:dict[str,Any],target:Target
         if rule.get("requires_additional_target") and cluster_size<2:continue
         for tier_row in rule["damage_tiers"]:
             tier=int(tier_row["tier"])
-            if level>=tier_minimum[tier]:packages.append(Package(rule["entity_id"],tier,int(rule["psi_cost"]),model.blood_tax(level,tier)))
+            if level>=tier_minimum[tier]:
+                packages.append(Package(rule["entity_id"],tier,int(rule["psi_cost"]),model.blood_tax(level,tier)))
+                for option in tier_row.get("damage_options",[]):
+                    if level>=int(option["minimum_level"]):packages.append(Package(rule["entity_id"],tier,int(rule["psi_cost"]),model.blood_tax(level,tier),option["id"]))
     package_tuple=tuple(packages);rider_values={package:_rider_values(model,target,discipline_id,cluster_size,level,pb,psi_modifier,strike_die,package) for package in package_tuple};strike_options=_strike_packet_options(model,target,discipline_id,level,psi_modifier,strike_die)
     standalones_by_round=[]
     for round_index in range(len(action_slots)):
