@@ -87,6 +87,8 @@ export type MechanicsDamageType=ConcreteDamageType;
 export type MechanicsValue=
   | {kind:"fixed";value:number}
   | {kind:"dice";count:number;sides:number}
+  | {kind:"dice_plus_fixed";count:number;sides:number;fixed:number}
+  | {kind:"fixed_by_level";value:number;minimum_level:number;upgraded_value:number}
   | {kind:"manifested_strike_dice";count:number}
   | {kind:"psionic_ability_modifier";multiplier:number}
   | {kind:"proficiency_bonus";multiplier:number}
@@ -138,6 +140,7 @@ export interface MechanicsSurface {
   modes?:Array<{id:string}>;
   limits?:{uses:Extract<MechanicsValue,{kind:"floor_proficiency_bonus_divisor"}>;recovery:"short_or_long_rest"};
   steps?:MechanicsStep[];
+  damage_options?:Array<{id:string;label:string;minimum_level:number;targeting:Extract<MechanicsTargeting,{kind:"struck_target"}>;value:MechanicsValue}>;
   tiers?:MechanicsTier[];
 }
 export interface EntityMechanics {surfaces:MechanicsSurface[]}
@@ -178,6 +181,8 @@ export type CalculatorDamageResolution = "always" | "failed_save" | "half_on_suc
 
 export type CalculatorDamage =
   | { kind: "none"; resolution: CalculatorDamageResolution }
+  | { kind: "dice_plus_fixed"; resolution: CalculatorDamageResolution; count:number; sides:number; fixed:number }
+  | { kind: "fixed_by_level"; resolution: CalculatorDamageResolution; value:number; minimum_level:number; upgraded_value:number }
   | { kind: "fixed"; resolution: CalculatorDamageResolution; value: number }
   | { kind: "dice"; resolution: CalculatorDamageResolution; count: number; sides: number }
   | { kind: "manifested_strike_dice"; resolution: CalculatorDamageResolution; count: number }
@@ -186,6 +191,7 @@ export type CalculatorDamage =
 export interface CalculatorTier {
   tier: 0 | 1 | 2;
   damage: CalculatorDamage;
+  damage_options?:Array<{id:string;label:string;minimum_level:number;target_count:1;damage:CalculatorDamage}>;
   secondary_damage?: CalculatorDamage;
   save?: CalculatorSave;
 }
@@ -294,7 +300,7 @@ export interface HarnessMechanics {
   action_economy:{standalone_psionic_action_limit_per_turn:null;action_surge_allows_additional_standalone_psionic_action:true};
   manifested_strike:{entity_id:"common_manifested_strike";rider_repeatability:"per_manifested_strike";damage_type_source:"discipline";holdout:{damage_type:"force";declaration_timing:"before_attack_roll";formulas:Array<{minimum_level:number;maximum_level:number;kind:"halve_total_rounded_down"}|{minimum_level:number;maximum_level:number;kind:"dice_plus_psionic_ability_modifier";count:1;sides:6}>};critical_dice_multiplier:2;attack_bonus:{base:number;components:Array<"psionic_ability_modifier"|"proficiency_bonus"|"psionic_focus">};save_dc:{base:number;components:Array<"psionic_ability_modifier"|"proficiency_bonus"|"psionic_focus">}};
   overload:{entity_id:"common_overload";blood_tax_per_tier:{base:number;proficiency_bonus_multiplier:number};tier_two_limit_per_attack_action:1;tier_two_damage_ignores_resistance:true;mastery:{minimum_level:18;uses_per_rest:1;blood_tax_divisor:2;minimum_per_overload:1}};
-  psionic_apex:{minimum_level:18;psychokinesis_manifested_strike_hit:{discipline_id:"psychokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";damage_type:"force";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};pyrokinesis_manifested_strike_hit:{discipline_id:"pyrokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";damage_type:"fire";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};cryokinesis_manifested_strike_hit:{discipline_id:"cryokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";damage_type:"cold";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};electrokinesis_manifested_strike_hit:{discipline_id:"electrokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";damage_type:"lightning";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0}};
+  psionic_apex:{minimum_level:18;psychokinesis_manifested_strike_hit:{discipline_id:"psychokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";declaration:"before_attack_roll";consumption:"on_declaration";damage_type:"force";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};pyrokinesis_manifested_strike_hit:{discipline_id:"pyrokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";declaration:"before_attack_roll";consumption:"on_declaration";damage_type:"fire";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};cryokinesis_manifested_strike_hit:{discipline_id:"cryokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";declaration:"before_attack_roll";consumption:"on_declaration";damage_type:"cold";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0};electrokinesis_manifested_strike_hit:{discipline_id:"electrokinesis";uses_per_attack_action:1;reset:"start_of_each_attack_action";declaration:"before_attack_roll";consumption:"on_declaration";damage_type:"lightning";damage:{kind:"dice";count:3;sides:8};critical_dice_multiplier:1;psi_cost:0;blood_tax:0}};
   disciplines:HarnessDiscipline[];
   feature_rules:HarnessFeatureRule[];
 }

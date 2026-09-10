@@ -117,11 +117,15 @@ The production model uses bounded typed formulas rather than a general expressio
 
 - fixed integer;
 - dice;
+- dice plus a fixed bonus, resolved as one packet before successful-save halving;
+- fixed damage with one explicit Fighter-level threshold and an upgraded value;
 - Manifested Strike dice;
 - Psionic Ability modifier with an integer multiplier;
 - Proficiency Bonus with an integer multiplier;
 - fixed plus a bounded canonical component;
 - floor of a bounded canonical component divided by a fixed divisor.
+
+Schema 2.13.0 adds `dice_plus_fixed` for Absolute Zero and `fixed_by_level` for Telekinetic Shove. A direct-damage rider surface can also author `damage_options`: level-gated alternatives that replace the rider damage and forgo every additional target. Options inherit the surface’s pre-roll declaration, on-hit resolution, native damage type, and tier costs. They apply at every tier and cannot be attached to save-gated riders or riders with additional effects. Calculator tier views and harness choices derive from this single source. Focused Branching Bolt supplies the first concrete use.
 
 Units remain explicit where relevant. New formula kinds require a real canonical feature need; consumers must not accept arbitrary expressions.
 

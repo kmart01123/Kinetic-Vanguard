@@ -424,3 +424,25 @@ test("retired Gravitic Press is absent from authority and publication and old li
     assert.ok(dom.window.document.querySelector("#entity-how_to_play")||dom.window.document.querySelector("#calculator-feature-results > h3"));dom.window.close();
   }
 });
+
+test("surgical upgrades render level-aware rider choices and whole-packet save averages",async()=>{
+  const result=await executeBuild("prototype"),html=await readFile(result.htmlPath,"utf8");
+  const dom=new JSDOM(html,{runScripts:"dangerously",url:"https://local.invalid/KineticVanguard.prototype.html#calculator&card=telekinetic_shove&level=17&modifier=5",beforeParse(window:any){installOnboardingBrowserShims(window);}});
+  const document=dom.window.document,level=document.querySelector<HTMLSelectElement>("#calculator-level")!;
+  const tiers=()=>[...document.querySelectorAll<HTMLElement>("#calculator-feature-results .calculator__tier")];
+  for(const tier of tiers())assert.match(normalizedDeckText(tier),/Rider damage: 2Combined/u);
+  changeDeckSelect(dom,level,"18");for(const tier of tiers())assert.match(normalizedDeckText(tier),/Rider damage: 4Combined/u);
+  clickDeckCard(document,"branching_bolt");
+  for(const tier of tiers()){
+    assert.match(normalizedDeckText(tier.querySelector<HTMLElement>(".calculator__metrics")!),/Rider damage: 1d12/u);
+    const option=tier.querySelector<HTMLElement>('[data-damage-option="focused"]')!;
+    assert.match(normalizedDeckText(option),/Focused Bolt.*Rider damage: 2d12.*Combined damage: 3d12 \+ 5.*Total targets: 1/u);
+  }
+  changeDeckSelect(dom,level,"17");assert.equal(document.querySelectorAll(".calculator__damage-option").length,0);
+  changeDeckSelect(dom,level,"20");clickDeckCard(document,"absolute_zero");
+  for(const [index,tier] of tiers().entries()){
+    assert.match(normalizedDeckText(tier),new RegExp(`Damage: 6d10 \\+ ${45+index*10} on a failed save`));
+    assert.match(normalizedDeckText(tier),new RegExp(`Expected avg damage: ${78+index*10} on a failed save · ${39+index*5} on a successful save`));
+  }
+  dom.window.close();
+});

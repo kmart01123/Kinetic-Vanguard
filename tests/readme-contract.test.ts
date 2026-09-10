@@ -27,6 +27,23 @@ const readBalanceSnapshot=(region:string):BalanceSnapshot=>{
   return {kind:retained?"retained":"development",rulesVersion:development[1]!,publishedVersion:development[2]!};
 };
 
+test("harness Apex methodology enforces shared maturation as a pre-roll gamble",async()=>{
+  const guide=await readFile("harness/README.md","utf8");
+  const start=guide.indexOf("At Fighter 18+, Psionic Apex");
+  assert.ok(start>=0);
+  const apex=guide.slice(start,guide.indexOf("\nBattle Master and Eldritch Knight consume",start));
+  assert.match(apex,/same 3d8 native-damage Discipline Maturation packet to all four disciplines/);
+  assert.match(apex,/cold for Cryokinesis, fire for Pyrokinesis, force for Psychokinesis, and lightning for Electrokinesis/);
+  assert.match(apex,/once per Attack action.*each new Attack action, including one from Action Surge, starts with a fresh use.*later attacks within the same Attack action do not refresh it/s);
+  assert.match(apex,/only the struck creature.*costs no Psi or Blood Tax.*does not double on a critical hit.*no Overload tier.*Resistance and Immunity apply normally even with a Tier-2 rider or Holdout/s);
+  assert.match(apex,/For all four disciplines, players must predeclare Discipline Maturation before the attack roll.*use is spent on that declared attack even if it misses/s);
+  assert.match(apex,/gamble, not an automatic on-hit proc or a choice made after seeing the roll/);
+  assert.match(apex,/Only a hit by the declared Manifested Strike qualifies.*Combat Prowess.*An undeclared hit does not consume the use.*A declared miss spends it.*a later hit cannot recover that spent use/s);
+  assert.match(apex,/There is no automatic first qualifying hit consumption/);
+  assert.match(apex,/Immunity can reduce a declared hit's packet to zero without refunding the use/);
+  assert.doesNotMatch(apex,/current evaluator preserves availability through misses|first qualifying Manifested Strike hit consumes it/);
+});
+
 const assertBalanceSnapshotState=(snapshot:BalanceSnapshot,release:{published:string;development:string},authorityVersion:string):void=>{
   if(snapshot.kind==="published"){
     assert.equal(snapshot.rulesVersion,release.published);
@@ -90,7 +107,7 @@ test("README exposes one structurally valid headline balance snapshot",async()=>
   const tableHeader="| Level | Cryokinesis | Pyrokinesis | Psychokinesis | Electrokinesis |";assert.equal(occurrences(region,tableHeader),1);assert.equal(occurrences(readme,"\n|---|---|---|---|---|"),1);
   const lines=region.split("\n"),headerIndexes=lines.flatMap((line,index)=>line===tableHeader?[index]:[]),expectedLevels=benchmarkConfig.methodology.levels.map(String),publicResult=/^(?:IDEAL|N\/A|COLD \(-\d+(?:\.\d+)?%\)|HOT \(\+\d+(?:\.\d+)?%\))$/;
   for(const headerIndex of headerIndexes){assert.equal(lines[headerIndex+1],"|---|---|---|---|---|");const rows=lines.slice(headerIndex+2,headerIndex+2+expectedLevels.length);assert.equal(rows.length,expectedLevels.length);rows.forEach((row,rowIndex)=>{const cells=row.split("|").slice(1,-1).map(cell=>cell.trim());assert.equal(cells.length,5);assert.equal(cells[0],expectedLevels[rowIndex]);for(const cell of cells.slice(1))assert.match(cell,publicResult);});}
-  const exactDamageTable=[tableHeader,"|---|---|---|---|---|","| 7 | COLD (-6.99%) | IDEAL | COLD (-2.61%) | IDEAL |","| 11 | COLD (-19.14%) | IDEAL | COLD (-0.20%) | IDEAL |","| 15 | COLD (-15.14%) | IDEAL | IDEAL | COLD (-8.78%) |","| 20 | COLD (-32.10%) | COLD (-1.09%) | COLD (-14.95%) | COLD (-16.80%) |"].join("\n");assert.equal(occurrences(region,exactDamageTable),1);const damageStart=region.indexOf("### Single-Target Damage"),controlStart=region.indexOf("### Control benchmark",damageStart);assert.ok(damageStart>=0&&controlStart>damageStart);const damageRegion=region.slice(damageStart,controlStart);const fighter20Link="**Fighter 20 note:** [Why the published v14.3 snapshot is COLD at level 20](https://github.com/kmart01123/kinetic-vanguard/issues/122#issuecomment-5389467514)";assert.equal(occurrences(damageRegion,fighter20Link),1);assert.match(damageRegion,new RegExp(`${exactDamageTable.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\n\\n\\*\\*Fighter 20 note:`));
+  const exactDamageTable=[tableHeader,"|---|---|---|---|---|","| 7 | COLD (-6.99%) | IDEAL | COLD (-2.61%) | IDEAL |","| 11 | COLD (-19.14%) | IDEAL | COLD (-0.20%) | IDEAL |","| 15 | COLD (-15.14%) | IDEAL | IDEAL | COLD (-8.78%) |","| 20 | COLD (-26.12%) | COLD (-1.31%) | COLD (-6.03%) | COLD (-9.68%) |"].join("\n");assert.equal(occurrences(region,exactDamageTable),1);const damageStart=region.indexOf("### Single-Target Damage"),controlStart=region.indexOf("### Control benchmark",damageStart);assert.ok(damageStart>=0&&controlStart>damageStart);const damageRegion=region.slice(damageStart,controlStart);const fighter20Link="**Fighter 20 note:** [Why the published v14.3 snapshot is COLD at level 20](https://github.com/kmart01123/kinetic-vanguard/issues/122#issuecomment-5389467514)";assert.equal(occurrences(damageRegion,fighter20Link),1);assert.match(damageRegion,new RegExp(`${exactDamageTable.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\n\\n\\*\\*Fighter 20 note:`));
   assert.match(region,/47 creature profiles from SRD 5\.2\.1 at levels 7, 11, 15, and 20/);assert.match(region,/weighted equally within their level/);
   assert.match(region,/Battle Master and Eldritch Knight define the comparison envelope for the front-door Single-Target Damage result/);assert.match(region,/comparator-envelope benchmark, not a universal real-play balance tolerance/);assert.match(region,/Front-door damage comparator-table cells contain only the public balance classification/);assert.doesNotMatch(region,/README cells intentionally contain only/);
   assert.match(region,/Control Value and Control Reliability require more context than the front-door damage check.*exhaustive exact-form results, effective coverage, Control Unit methodology, and Reliability analysis/s);
